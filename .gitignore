@@ -1,0 +1,6 @@
+dist-newstyle/
+*.o
+*.hi
+# generated exports are never committed; the small test fixtures are
+*.ndjson
+!tests/fixtures/**/*.ndjson

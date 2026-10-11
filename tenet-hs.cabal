@@ -1,0 +1,48 @@
+cabal-version:      3.0
+name:               tenet-hs
+version:            0.1.0
+synopsis:           An independent Lean 4 kernel in Haskell, and a checker for Lean exports
+description:        Re-checks lean4export NDJSON files from scratch. Written from the type theory and the
+                    reference kernel's behavior; shares no code with Lean.
+license:            Apache-2.0
+license-file:       LICENSE
+author:             Keith Adler and the tenet-hs contributors
+maintainer:         Keith Adler
+copyright:          Copyright (c) 2026 Keith Adler and the tenet-hs contributors
+build-type:         Simple
+
+common shared
+    default-language: GHC2021
+    default-extensions: PatternSynonyms, ViewPatterns, LambdaCase, BangPatterns, OverloadedStrings, MultiWayIf, TupleSections
+    ghc-options:      -O1 -Wall -Wno-name-shadowing -Wno-unused-do-bind -Wno-incomplete-uni-patterns -Wno-incomplete-record-selectors -Wno-incomplete-record-updates
+    build-depends:    base >=4 && <5, containers, bytestring, text, mtl
+
+library
+    import:           shared
+    hs-source-dirs:   src
+    exposed-modules:  Tenet.Name
+                      Tenet.Level
+                      Tenet.Expr
+                      Tenet.ExprOps
+                      Tenet.Env
+                      Tenet.Add
+                      Tenet.TypeChecker
+                      Tenet.Quot
+                      Tenet.Inductive
+                      Tenet.Json
+                      Tenet.Export
+                      Tenet.Check
+
+executable tenet-hs
+    import:           shared
+    hs-source-dirs:   app
+    main-is:          Main.hs
+    build-depends:    tenet-hs
+    ghc-options:      -rtsopts "-with-rtsopts=-K2g -A64m"
+
+test-suite spec
+    import:           shared
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   tests
+    main-is:          Spec.hs
+    build-depends:    tenet-hs, directory, filepath
