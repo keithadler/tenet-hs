@@ -19,9 +19,11 @@ description: |
 
   It is single-threaded and slower than the other independent kernels; the reasons, with
   measurements, are in `docs/design.md`.
+
+  Written by Claude (Anthropic), directed by Keith Adler.
 url: https://github.com/keithadler/tenet-hs
 ref: main
-rev: REPLACE_WITH_REV
+rev: af0161de21c73517ac8ef33d692a67fb9bd96120
 version: "0.1.0"
 
 # One worker: declarations are checked in order, in one thread, so the default of one CPU slot is
