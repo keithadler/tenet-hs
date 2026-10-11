@@ -26,6 +26,7 @@ library
                       Tenet.Expr
                       Tenet.ExprOps
                       Tenet.Env
+                      Tenet.Rules
                       Tenet.Add
                       Tenet.TypeChecker
                       Tenet.Quot

@@ -27,6 +27,7 @@ import Tenet.TypeChecker (unvalidatedPrimitives)
 data CheckOptions = CheckOptions
   { coFailFast :: Bool
   , coQuiet :: Bool
+  , coRules :: Bool               -- ^ count rule firings (reported by the caller)
   , coSilent :: Bool              -- ^ do not print failures at all (for library callers and tests)
   , coOnly :: Maybe [String]      -- ^ check just these declarations; add everything else unchecked
   , coCompareInductive :: Bool
@@ -36,7 +37,7 @@ data CheckOptions = CheckOptions
 
 defaultCheckOptions :: CheckOptions
 defaultCheckOptions = CheckOptions
-  { coFailFast = False, coQuiet = False, coSilent = False, coOnly = Nothing, coCompareInductive = True
+  { coFailFast = False, coQuiet = False, coRules = False, coSilent = False, coOnly = Nothing, coCompareInductive = True
   , coPrimitiveCheck = True, coMaxUnfolds = 100000000 }
 
 data Failure = Failure
@@ -211,7 +212,9 @@ compareInductive env (XInductive tys cts rcs) = do
 compareInductive _ _ = pure ()
 
 -- | Install the exporter's own view of a declaration without checking it, so later declarations can still be
--- checked after a failure. Constants that are already present are left alone.
+-- checked after a failure. This overrides anything the kernel derived for the same names: a declaration whose
+-- exporter-claimed recursor disagreed with the derived one is judged by later declarations against what the
+-- file actually says, not against what it should have said.
 installUnchecked :: Env -> ExportDecl -> IO ()
 installUnchecked env = \case
   XAxiom n lps ty u -> add (ConstantInfo n lps ty (KAxiom u))
@@ -232,6 +235,4 @@ installUnchecked env = \case
             [RecRule (xrCtor x) (xrNumFields x) (xrRhs x) | x <- xrRules r] (xrK r) (xrIsUnsafe r)))
   where
     addDef d = add (ConstantInfo (dName d) (dLParams d) (dType d) (KDef (dValue d) (dHints d) (dSafety d) (dAll d)))
-    add c = do
-      present <- containsConst env (ciName c)
-      unless present (addCore env c)
+    add = addCore env

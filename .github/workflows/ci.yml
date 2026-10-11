@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.14.1"
+          cabal-version: "3.14"
+      - name: Build
+        run: cabal build all
+      - name: Unit tests and the negative corpus
+        run: cabal test --test-show-details=direct
+
+  arena:
+    # The arena's own published test suite, run the way the arena runs it: built with plain ghc (no cabal,
+    # no package downloads), executed with an empty environment, exit codes mapped as in
+    # packaging/arena/tenet-hs.yaml. Anything short of a perfect score fails. perf/ tests that outrun the
+    # timeout are declined by the arena, not wrong, so they are skipped here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: "9.14.1"
+      - name: Build with plain ghc
+        run: |
+          ghc -O2 -isrc -iapp -outputdir arena-obj -o tenet-hs-arena \
+            -XGHC2021 -XPatternSynonyms -XViewPatterns -XLambdaCase -XBangPatterns \
+            -XOverloadedStrings -XMultiWayIf -XTupleSections \
+            -rtsopts "-with-rtsopts=-K2g -A64m" app/Main.hs
+      - name: Fetch the arena suite
+        run: |
+          curl -fsSL -o suite.tar.gz https://arena.lean-lang.org/lean-arena-tests.tar.gz
+          mkdir suite && tar -xzf suite.tar.gz -C suite
+      - name: Run it
+        run: |
+          rm -rf suite/good/perf/magma-list-deep-n36.ndjson suite/good/perf/magma-list-pair-n21.ndjson
+          env -i ARENA_TIMEOUT=300 PATH=/usr/bin:/bin tools/arena.sh suite "$PWD/tenet-hs-arena"

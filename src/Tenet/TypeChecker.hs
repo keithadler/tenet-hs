@@ -33,6 +33,7 @@ import Tenet.HTable
 import Tenet.ExprOps
 import Tenet.Level
 import Tenet.Name
+import Tenet.Rules
 
 -- ---------------------------------------------------------------- local context
 
@@ -488,7 +489,7 @@ inferLit tc = \case
 
 inferTypeCore :: TC -> Expr -> Bool -> IO Expr
 inferTypeCore tc e inferOnly
-  | hasLooseBVars e = kerr "type checker does not support loose bound variables, replace them with free variables before invoking it"
+  | hasLooseBVars e = fire InferBVar >> kerr "type checker does not support loose bound variables, replace them with free variables before invoking it"
   | otherwise = do
       let cache = if inferOnly then tcInferOnly tc else tcCheckC tc
       hit <- cacheGet cache e
@@ -496,19 +497,21 @@ inferTypeCore tc e inferOnly
         Just r -> pure r
         Nothing -> do
           r <- case e of
-            Lit l -> inferLit tc l
-            Proj n i s -> inferProj tc n i s inferOnly
+            Lit l -> fire InferLit >> inferLit tc l
+            Proj n i s -> fire InferProj >> inferProj tc n i s inferOnly
             FVar i -> do
+              fire InferFVar
               d <- findLocalDecl tc i
               maybe (kerr "unknown free variable") (pure . ldType) d
             Sort l -> do
+              fire InferSort
               unless inferOnly (checkLevel tc l)
               pure (Sort (LSucc l))
-            Const n ls -> inferConstant tc n ls inferOnly
-            Lam {} -> inferLambda tc e inferOnly
-            Pi {} -> inferPi tc e inferOnly
-            App {} -> inferApp tc e inferOnly
-            Let {} -> inferLet tc e inferOnly
+            Const n ls -> fire InferConst >> inferConstant tc n ls inferOnly
+            Lam {} -> fire InferLam >> inferLambda tc e inferOnly
+            Pi {} -> fire InferPi >> inferPi tc e inferOnly
+            App {} -> fire InferApp >> inferApp tc e inferOnly
+            Let {} -> fire InferLet >> inferLet tc e inferOnly
             BVar _ -> kerr "unexpected bound variable"
           cachePut cache e r
           pure r
@@ -612,7 +615,7 @@ tryReduceRec tc e recName recLevels whnf' = do
         major2 <- whnf' major1
         major3 <- case major2 of
           Lit (NatLit n) -> pure (natLitToConstructor n)
-          Lit (StrLit s) -> stringLitToConstructor (tcEnv tc) s >>= whnf'
+          Lit (StrLit s) -> fire StringLitToCtor >> stringLitToConstructor (tcEnv tc) s >>= whnf'
           _ -> do
             mi <- recMajorInduct rec
             toCtorWhenStructure tc mi major2 whnf'
@@ -622,6 +625,7 @@ tryReduceRec tc e recName recLevels whnf' = do
             let majorArgs = getAppArgs major3
                 nf = rrNumFields rule
             if nf > length majorArgs || length recLevels /= length (ciLParams rec) then pure Nothing else do
+              fire (if isK && major1 /= major0 then IotaK else Iota)
               let rhs0 = instantiateLevelParams (rrRhs rule) (ciLParams rec) recLevels
                   rhs1 = mkApp rhs0 (take (np + nmot + nmin) recArgs)
                   rhs2 = mkApp rhs1 (drop (length majorArgs - nf) majorArgs)
@@ -646,7 +650,8 @@ quotTryReduceRec tc e fn
       if length args <= mkPos then pure Nothing else do
         mk <- whnf tc (args !! mkPos)
         case (getAppFn mk, mk) of
-          (Const n _, App _ a) | n == nQuotMk && getAppNumArgs mk == 3 ->
+          (Const n _, App _ a) | n == nQuotMk && getAppNumArgs mk == 3 -> do
+            fire (if fn == nQuotLift then QuotLift else QuotInd)
             pure (Just (mkApp (App (args !! argPos) a) (drop (mkPos + 1) args)))
           _ -> pure Nothing
 
@@ -665,7 +670,7 @@ reduceRecursor tc e hd cheapRec cheapProj = case hd of
 reduceProjCore :: TC -> Expr -> Name -> Int -> IO (Maybe Expr)
 reduceProjCore tc c0 sname idx = do
   c <- case c0 of
-    Lit (StrLit s) -> stringLitToConstructor (tcEnv tc) s >>= whnf tc
+    Lit (StrLit s) -> fire StringLitToCtor >> stringLitToConstructor (tcEnv tc) s >>= whnf tc
     _ -> pure c0
   case getAppFn c of
     Const n _ -> do
@@ -686,7 +691,7 @@ whnfCoreX tc cheapRec cheapProj e = case e of
     md <- findLocalDecl tc i
     case md >>= ldValue of
       Nothing -> pure e
-      Just v -> whnfCoreX tc cheapRec cheapProj v
+      Just v -> fire ZetaFVar >> whnfCoreX tc cheapRec cheapProj v
   Proj {} -> cached
   App {} -> cached
   Let {} -> cached
@@ -705,6 +710,7 @@ whnfCoreX tc cheapRec cheapProj e = case e of
       Proj n i s -> do
         c <- if cheapProj then recur s else whnf tc s
         m <- reduceProjCore tc c n i
+        when (isJust m) (fire ProjRed)
         r <- maybe (pure e) recur m
         pure (r, True)
       App {} -> do
@@ -713,6 +719,7 @@ whnfCoreX tc cheapRec cheapProj e = case e of
         f <- recur f0
         case f of
           Lam {} -> do
+            fire Beta
             r <- recur (betaRev f revArgs)
             pure (r, True)
           _ | f == f0 -> do
@@ -726,6 +733,7 @@ whnfCoreX tc cheapRec cheapProj e = case e of
                 r <- recur (mkRevApp f revArgs)
                 pure (r, True)
       Let _ _ v b -> do
+        fire Zeta
         r <- recur (instantiate1 b v)
         pure (r, True)
       _ -> pure (e, False)
@@ -769,7 +777,7 @@ unfoldDefinition tc e = case e of
 reduceNative :: Expr -> IO (Maybe Expr)
 reduceNative = \case
   App (Const f _) (Const _ _) | f == nReduceBool || f == nReduceNat ->
-    unsupported ("'" ++ showName f ++ "' requires running compiled code, which an external checker cannot trust; the declaration cannot be checked")
+    fire NativeReduce >> unsupported ("'" ++ showName f ++ "' requires running compiled code, which an external checker cannot trust; the declaration cannot be checked")
   _ -> pure Nothing
 
 isNatLitExt :: Expr -> Bool
@@ -800,14 +808,15 @@ binOp tc e checkSize f = do
     Just (x, y) -> do
       let r = f x y
       when checkSize $ checkNatSize (byteCount r)
+      fire NatLitOp
       pure (Just (mkNatLit r))
 
 binPred :: TC -> Expr -> (Integer -> Integer -> Bool) -> IO (Maybe Expr)
 binPred tc e f = do
   m <- natArgs tc e
-  pure $ case m of
-    Nothing -> Nothing
-    Just (x, y) -> Just (if f x y then boolTrueE else boolFalseE)
+  case m of
+    Nothing -> pure Nothing
+    Just (x, y) -> fire NatLitPred >> pure (Just (if f x y then boolTrueE else boolFalseE))
 
 getCountArg :: Integer -> String -> IO Int
 getCountArg c op
@@ -823,6 +832,7 @@ reduceNat tc e = case getAppNumArgs e of
           if not (isNatLitExt arg) then pure Nothing else do
             let v = getNatVal arg + 1
             checkNatSize (byteCount v)
+            fire NatLitOp
             pure (Just (mkNatLit v))
   2 | App (App (Const f []) _) _ <- e -> dispatch f
   _ -> pure Nothing
@@ -857,6 +867,7 @@ reduceNat tc e = case getAppNumArgs e of
           k <- getCountArg ex "Nat.pow"
           when (b > 1 && k /= 0 && byteCount b > natMaxSizeBytes `div` toInteger k) $
             kerr "the kernel refused to evaluate `Nat.pow` because the result would exceed the maximum numeral size"
+          fire NatLitOp
           pure (Just (mkNatLit (b ^ k)))
     reduceShiftLeft = do
       m <- natArgs tc e
@@ -867,6 +878,7 @@ reduceNat tc e = case getAppNumArgs e of
           | otherwise -> do
               k <- getCountArg sh "Nat.shiftLeft"
               checkNatSize (byteCount v + toInteger (k `div` 8) + 1)
+              fire NatLitOp
               pure (Just (mkNatLit (v `shiftL` k)))
 
 bumpUnfold :: TC -> IO ()
@@ -907,7 +919,7 @@ whnf tc e = case e of
             Nothing -> do
               next <- unfoldDefinition tc t1
               case next of
-                Just n -> bumpUnfold tc >> loop n
+                Just n -> fire Delta >> bumpUnfold tc >> loop n
                 Nothing -> done t1
     done r = cachePut (tcWhnfC tc) e r >> pure r
 
@@ -968,14 +980,14 @@ isDefEqBinding tc isLam = go []
 
 quickIsDefEq :: TC -> Expr -> Expr -> IO LB
 quickIsDefEq tc t s
-  | t == s = pure LTrue
+  | t == s = fire DefEqSyntactic >> pure LTrue
   | otherwise = do
       sb <- pairHas (tcSuccess tc) t s
       if sb then pure LTrue else
         if not (sameKind t s) then pure LUndef else case (t, s) of
-          (Lam {}, _) -> toLB <$> isDefEqBinding tc True t s
-          (Pi {}, _) -> toLB <$> isDefEqBinding tc False t s
-          (Sort a, Sort b) -> pure (toLB (isEquiv a b))
+          (Lam {}, _) -> fire DefEqBinding >> (toLB <$> isDefEqBinding tc True t s)
+          (Pi {}, _) -> fire DefEqBinding >> (toLB <$> isDefEqBinding tc False t s)
+          (Sort a, Sort b) -> fire DefEqSort >> pure (toLB (isEquiv a b))
           (Lit a, Lit b) -> pure (toLB (a == b))
           _ -> pure LUndef
 
@@ -1056,13 +1068,14 @@ tryUnfoldProjApp :: TC -> Expr -> IO (Maybe Expr)
 tryUnfoldProjApp tc e = case getAppFn e of
   Proj {} -> do
     n <- whnfCore tc e
-    pure (if n == e then Nothing else Just n)
+    if n == e then pure Nothing else fire UnfoldProjApp >> pure (Just n)
   _ -> pure Nothing
 
 data Step = Continue | DefUnknown | DefEqual | DefDiff
 
 lazyDeltaReductionStep :: TC -> Expr -> Expr -> IO (Step, Expr, Expr)
 lazyDeltaReductionStep tc tn sn = do
+  fire DeltaLazy
   bumpUnfold tc
   dt <- isDelta tc tn
   ds <- isDelta tc sn
@@ -1127,8 +1140,8 @@ isNatSucc = \case
 
 isDefEqOffset :: TC -> Expr -> Expr -> IO LB
 isDefEqOffset tc t s
-  | isNatZero t && isNatZero s = pure LTrue
-  | Just pt <- isNatSucc t, Just ps <- isNatSucc s = toLB <$> isDefEqCore tc pt ps
+  | isNatZero t && isNatZero s = fire DefEqOffset >> pure LTrue
+  | Just pt <- isNatSucc t, Just ps <- isNatSucc s = fire DefEqOffset >> (toLB <$> isDefEqCore tc pt ps)
   | otherwise = pure LUndef
 
 data DR = DRTrue | DRFalse | DRUndef Expr Expr
@@ -1239,7 +1252,7 @@ isDefEqCore tc t s = do
         if (not (hasFVar t) || eager) && isConstOf s nBoolTrue
           then (\w -> isConstOf w nBoolTrue) <$> whnf tc t
           else pure False
-      if reflected then pure True else do
+      if reflected then fire DefEqReflect >> pure True else do
         tn <- whnfCoreX tc False True t
         sn <- whnfCoreX tc False True s
         r1 <- if not (tn == t) || not (sn == s) then quickIsDefEq tc tn sn else pure LUndef
@@ -1249,37 +1262,40 @@ isDefEqCore tc t s = do
           LUndef -> do
             r2 <- isDefEqProofIrrel tc tn sn
             case r2 of
-              LTrue -> pure True
-              LFalse -> pure False
+              LTrue -> fire DefEqProofIrrel >> pure True
+              LFalse -> fire DefEqProofIrrel >> pure False
               LUndef -> do
                 dr <- lazyDeltaReduction tc tn sn
                 case dr of
-                  DRTrue -> pure True
-                  DRFalse -> pure False
+                  DRTrue -> fire DefEqLazyDelta >> pure True
+                  DRFalse -> fire DefEqLazyDelta >> pure False
                   DRUndef tn' sn' -> afterDelta tn' sn'
   where
     afterDelta tn sn
-      | Const a la <- tn, Const b lb <- sn, a == b, levelsEquiv la lb = pure True
-      | FVar a <- tn, FVar b <- sn, a == b = pure True
+      | Const a la <- tn, Const b lb <- sn, a == b, levelsEquiv la lb = fire DefEqConst >> pure True
+      | FVar a <- tn, FVar b <- sn, a == b = fire DefEqFVar >> pure True
       | otherwise = do
           projOk <- case (tn, sn) of
             (Proj n1 i1 x, Proj n2 i2 y) | n1 == n2 && i1 == i2 -> lazyDeltaProjReduction tc x y n1 i1
             _ -> pure False
-          if projOk then pure True else do
+          if projOk then fire DefEqLazyDeltaProj >> pure True else do
             tnn <- whnfCore tc tn
             snn <- whnfCore tc sn
             if not (tnn == tn) || not (snn == sn) then isDefEqCore tc tnn snn else do
               a <- isDefEqApp tc tn sn
-              if a then pure True else do
+              if a then fire DefEqApp >> pure True else do
                 b <- tryEtaExpansion tc tn sn
-                if b then pure True else do
+                if b then fire DefEqEta >> pure True else do
                   c <- tryEtaStruct tc tn sn
-                  if c then pure True else do
+                  if c then fire DefEqEtaStruct >> pure True else do
                     d <- tryStringLitExpansion tc tn sn
                     case d of
-                      LTrue -> pure True
-                      LFalse -> pure False
-                      LUndef -> isDefEqUnitLike tc tn sn
+                      LTrue -> fire DefEqStringLit >> pure True
+                      LFalse -> fire DefEqStringLit >> pure False
+                      LUndef -> do
+                        u <- isDefEqUnitLike tc tn sn
+                        when u (fire DefEqUnitLike)
+                        pure u
 
 -- | Definitional equality. Sound but incomplete; results are cached per checker.
 isDefEq :: TC -> Expr -> Expr -> IO Bool

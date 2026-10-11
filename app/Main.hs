@@ -13,6 +13,7 @@ import System.IO
 import Tenet.Check
 import Tenet.Env (Primitive)
 import Tenet.Export (ExportMeta (..))
+import Tenet.Rules
 
 usage :: String
 usage = unlines
@@ -27,6 +28,7 @@ usage = unlines
   , "  --fail-fast            stop at the first rejected declaration"
   , "  --quiet                print only the name of each failure, not the reason"
   , "  --only A,B             check just these declarations; add everything else unchecked"
+  , "  --rules                print how often each kernel rule fired, and which never did"
   , "  --summary              print only the final line"
   , "  --no-compare           do not compare the exporter's inductive/recursor claims with the kernel's"
   , "  --no-primitive-check   take the Nat/String shortcuts on the name alone, as Lean's kernel does"
@@ -58,6 +60,7 @@ runCheck argv = do
   (file, opts) <- parse argv Nothing defaultCheckOptions
   path <- maybe (hPutStrLn stderr "tenet-hs: no input file" >> exitWith (ExitFailure 2)) pure file
   hSetBuffering stdout LineBuffering
+  when (coRules opts) enableRules
   r <- checkFile opts path
   forM_ (rMeta r) $ \m ->
     unless (coQuiet opts) $ putStrLn ("export by " ++ mExporter m ++ ", Lean " ++ mLean m ++ ", format " ++ mFormat m)
@@ -65,6 +68,7 @@ runCheck argv = do
   unless (null (rUnvalidated r)) $
     putStrLn ("note: these primitives did not match their defining equations and were unfolded instead of shortcut: "
               ++ intercalate ", " (map show (rUnvalidated r :: [Primitive])))
+  when (coRules opts) printRules
   let nfail = length (rFailures r)
       secs = show (fromIntegral (round (rSeconds r * 10) :: Int) / 10 :: Double)
   if nfail == 0 && rFormatError r == Nothing
@@ -80,6 +84,7 @@ runCheck argv = do
     parse ("--fail-fast" : r) f o = parse r f o { coFailFast = True }
     parse ("--quiet" : r) f o = parse r f o { coQuiet = True }
     parse ("--summary" : r) f o = parse r f o { coSilent = True, coQuiet = True }
+    parse ("--rules" : r) f o = parse r f o { coRules = True }
     parse ("--no-compare" : r) f o = parse r f o { coCompareInductive = False }
     parse ("--no-primitive-check" : r) f o = parse r f o { coPrimitiveCheck = False }
     parse ("--only" : v : r) f o = parse r f o { coOnly = Just (splitCommas v) }
@@ -87,3 +92,14 @@ runCheck argv = do
     parse (a@('-' : _) : _) _ _ = hPutStrLn stderr ("tenet-hs: unknown option " ++ a) >> exitWith (ExitFailure 2)
     parse (a : r) Nothing o = parse r (Just a) o
     parse (a : _) (Just _) _ = hPutStrLn stderr ("tenet-hs: unexpected argument " ++ a) >> exitWith (ExitFailure 2)
+
+printRules :: IO ()
+printRules = do
+  counts <- ruleCounts
+  putStrLn "rule coverage:"
+  forM_ counts $ \(r, n) ->
+    putStrLn ("  " ++ pad 20 (show r) ++ pad 12 (show n) ++ ruleDescription r
+              ++ maybe "" (\why -> if n == 0 then "  [unreachable: " ++ why ++ "]" else "") (subsumedBy r))
+  let missing = [r | (r, 0) <- counts, subsumedBy r == Nothing]
+  putStrLn (if null missing then "every reachable rule fired" else "never fired: " ++ intercalate ", " (map show missing))
+  where pad k s = s ++ replicate (k - length s) ' '
