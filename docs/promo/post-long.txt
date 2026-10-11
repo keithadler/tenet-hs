@@ -1,0 +1,24 @@
+LONG POST (X Premium), functional-kernel angle
+
+tenet-hs: an independent Lean 4 kernel in Haskell. Free, open source, Apache 2.0.
+
+Lean is a functional language, and the kernel that decides whether a proof is correct is C++. This is an independent implementation of that kernel in another functional language. Expressions, universe levels and declarations are algebraic data types, and every typing, reduction and equality rule is a case over them. The docs list each rule next to the function that implements it, so you can read the code against the type theory.
+
+It reads lean4export files and re-checks every declaration from scratch. It re-derives every constructor and recursor, nested and mutual inductives included, and compares them with what the exporter wrote. It checks that Nat.add really is addition before taking the arithmetic shortcut, and it will not trust compiled code.
+
+What it has been run against:
+
+- All of Lean's Init: 57,919 declarations accepted, none rejected.
+- The same file with every theorem handed another theorem's proof: it rejects 41,378, and Tenet, my C# kernel, rejects the identical 41,378.
+- 350 randomly damaged files compared against Tenet: no disagreements. The first run of that fuzzer found a real bug in tenet-hs, 9 of 120 files, and it is fixed.
+- The Lean Kernel Arena's published test suite: 196 of 196.
+
+The honest parts. It is not purely functional: substitution and the caches use mutable tables, because persistent maps were 75% of the profile. I tried hash-consing, the functional favorite, and it was ten times slower on these inputs, so it went back out. It is two to five times slower than Tenet on the arena's performance tests, it is single-threaded, and I have not run Mathlib yet. The design notes have every profile and every dead end.
+
+It builds with the GHC you already have and needs no packages.
+
+I am not planting a flag. I will maintain it alongside Tenet and the rest of the family. The more independent kernels there are, the better: every one is another chance to find a bug in the reference kernel, in the others, or in the spec they are all trying to match.
+
+github.com/keithadler/tenet-hs
+
+#lean4 #haskell #functionalprogramming #formalverification #opensource

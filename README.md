@@ -31,7 +31,7 @@ match.
 Be precise about what independence means here. The code shares nothing with Lean or Tenet. The
 algorithm is not independent: the goal is to match the reference kernel's behavior, so its
 structure is followed on purpose. A flaw in the kernel's *design* is one tenet-hs would likely
-reproduce rather than catch. What a second and third implementation do buy is protection against
+reproduce rather than catch. What each additional implementation does buy is protection against
 *implementation* bugs, and a cheap way to find them: two kernels that disagree on a declaration
 have found something. This one already has.
 

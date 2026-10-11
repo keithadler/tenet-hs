@@ -135,7 +135,7 @@ def main():
     F = FACTS
     paths = []
     paths.append(card("1-hero.png", (43, 29, 92), (15, 76, 92),
-        "A second Lean kernel. In Haskell.",
+        "An independent Lean kernel. In Haskell.",
         f"It re-checks all of Init: {F['init_decls']} declarations, none rejected.",
         win={"box": (880, 190, 1510, 690), "title": "Terminal",
              "lines": [("$ tenet-hs check Init.ndjson", "cmd"), ("export by lean4export,", "dim"), ("Lean 4.35.0-rc4, format 3.1.0", "dim"),

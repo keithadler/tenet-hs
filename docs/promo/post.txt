@@ -1,6 +1,6 @@
 SINGLE POST (fits 280 with X's URL rule)
 
-tenet-hs: a second independent Lean 4 kernel, in Haskell. Free, Apache 2.0.
+tenet-hs: an independent Lean 4 kernel in Haskell. Free, Apache 2.0.
 
 It re-checks all of Init. Give every theorem another's proof and it rejects the same 41,378 that Tenet does.
 
@@ -11,7 +11,7 @@ github.com/keithadler/tenet-hs
 
 THREAD (each under 280)
 
-1/ tenet-hs: a second independent Lean 4 kernel, in Haskell. Free, Apache 2.0.
+1/ tenet-hs: an independent Lean 4 kernel in Haskell. Free, Apache 2.0.
 
 It re-checks all of Init. Give every theorem another's proof and it rejects the same 41,378 that Tenet does.
 
