@@ -48,3 +48,14 @@ run: |
     4)   exit 2 ;;
     *)   exit 9 ;;
   esac
+
+# Not attempted, and so not claimed. The largest library tenet-hs has been run on is Init (57,919
+# declarations, 55 s, 2.5 GB peak). These are several times larger, it checks on one thread, and its
+# memory on inputs of that size is unmeasured, so declining them avoids spending the runner's hours
+# on a result that is more likely a timeout. They will be enabled once they have been measured.
+declines:
+  - mathlib
+  - cslib
+  - cedar
+  - con-leche
+  - navier-stokes-euler
