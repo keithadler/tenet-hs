@@ -134,6 +134,6 @@ One rule never fired: `DefEqStringLit`, a string literal compared against an app
 - **Parallelism.** Single-threaded by design for now.
 - **Other GHC versions.** Built and tested with GHC 9.14.1 only. The arena's flake provides `ghc` too, and a
   different version there may need changes.
-- **CI.** The workflow in `.github/workflows/ci.yml` is written and has not been run.
+- **CI beyond one platform.** The workflow in `.github/workflows/ci.yml` passes on Linux with GHC 9.14.1 (unit tests, and the arena suite built with plain `ghc` and run under an empty environment). Nothing else has been tried.
 - **Speed.** The gap to Tenet is the main open item.
 - **The arena submission.** The checker definition is prepared; no pull request has been opened.
