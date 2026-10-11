@@ -29,6 +29,7 @@ import GHC.Num.Integer (integerLog2)
 import System.IO.Unsafe (unsafePerformIO)
 import Tenet.Env
 import Tenet.Expr
+import Tenet.HTable
 import Tenet.ExprOps
 import Tenet.Level
 import Tenet.Name
@@ -51,38 +52,27 @@ freshId = atomicModifyIORef' fvarCounter (\n -> (n + 1, n))
 
 -- ---------------------------------------------------------------- caches
 
-type HCache v = IORef (IM.IntMap [(Expr, v)])
+type HCache v = HTable (Expr, v)
 
 newCache :: IO (HCache v)
-newCache = newIORef IM.empty
+newCache = newHTable
 
 cacheGet :: HCache v -> Expr -> IO (Maybe v)
-cacheGet c e = do
-  m <- readIORef c
-  pure $ case IM.lookup (exprHash e) m of
-    Nothing -> Nothing
-    Just b -> go b
-  where
-    go [] = Nothing
-    go ((k, v) : rest) = if k == e then Just v else go rest
+cacheGet c e = fmap snd <$> lookupBy c (exprHash e) (\(k, _) -> k == e)
 
 cachePut :: HCache v -> Expr -> v -> IO ()
-cachePut c e v = modifyIORef' c (IM.insertWith (++) (exprHash e) [(e, v)])
+cachePut c e v = insertH c (exprHash e) (e, v)
 
-type PairSet = IORef (IM.IntMap [(Expr, Expr)])
+type PairSet = HTable (Expr, Expr)
 
 pairKey :: Expr -> Expr -> Int
 pairKey a b = exprHash a + exprHash b
 
 pairHas :: PairSet -> Expr -> Expr -> IO Bool
-pairHas ps a b = do
-  m <- readIORef ps
-  pure $ case IM.lookup (pairKey a b) m of
-    Nothing -> False
-    Just bucket -> any (\(x, y) -> (x == a && y == b) || (x == b && y == a)) bucket
+pairHas ps a b = maybe False (const True) <$> lookupBy ps (pairKey a b) (\(x, y) -> (x == a && y == b) || (x == b && y == a))
 
 pairPut :: PairSet -> Expr -> Expr -> IO ()
-pairPut ps a b = modifyIORef' ps (IM.insertWith (++) (pairKey a b) [(a, b)])
+pairPut ps a b = insertH ps (pairKey a b) (a, b)
 
 -- ---------------------------------------------------------------- the checker
 
@@ -133,8 +123,8 @@ newTCWith env lctx safety skipPrims cacheFailures = do
   c3 <- newCache
   c4 <- newCache
   c5 <- newCache
-  s <- newIORef IM.empty
-  f <- newIORef IM.empty
+  s <- newHTable
+  f <- newHTable
   faithful <- readIORef faithfulRef
   pure TC { tcEnv = env, tcLctx = lctx, tcSafety = safety, tcSkipPrims = skipPrims, tcCacheFailures = cacheFailures && not faithful
           , tcLParams = lp, tcEager = eager, tcUnfolds = unf

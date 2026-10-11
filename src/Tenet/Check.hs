@@ -27,6 +27,7 @@ import Tenet.TypeChecker (unvalidatedPrimitives)
 data CheckOptions = CheckOptions
   { coFailFast :: Bool
   , coQuiet :: Bool
+  , coSilent :: Bool              -- ^ do not print failures at all (for library callers and tests)
   , coOnly :: Maybe [String]      -- ^ check just these declarations; add everything else unchecked
   , coCompareInductive :: Bool
   , coPrimitiveCheck :: Bool
@@ -35,10 +36,16 @@ data CheckOptions = CheckOptions
 
 defaultCheckOptions :: CheckOptions
 defaultCheckOptions = CheckOptions
-  { coFailFast = False, coQuiet = False, coOnly = Nothing, coCompareInductive = True
+  { coFailFast = False, coQuiet = False, coSilent = False, coOnly = Nothing, coCompareInductive = True
   , coPrimitiveCheck = True, coMaxUnfolds = 100000000 }
 
-data Failure = Failure { fKind :: String, fName :: Name, fSeconds :: Double, fMessage :: String }
+data Failure = Failure
+  { fKind :: String
+  , fName :: Name
+  , fSeconds :: Double
+  , fMessage :: String
+  , fDeclined :: Bool   -- ^ not a claim the proof is invalid: the checker will not vouch for it (compiled code)
+  }
 
 data Report = Report
   { rChecked :: Int            -- ^ declarations accepted
@@ -89,9 +96,10 @@ checkLines opts ls = do
                   KernelError m -> m
                   Unsupported m -> "unsupported: " ++ m
                   Timeout k -> "deterministic timeout after " ++ show k ++ " unfoldings"
-                f = Failure kind n (t2 - t1) msg
+                declined = case ex of Unsupported _ -> True; _ -> False
+                f = Failure kind n (t2 - t1) msg declined
             modifyIORef' failures (f :)
-            putStrLn ("FAIL " ++ kind ++ " " ++ showName n ++ " (" ++ show2 (t2 - t1) ++ "s)"
+            unless (coSilent opts) $ putStrLn ("FAIL " ++ kind ++ " " ++ showName n ++ " (" ++ show2 (t2 - t1) ++ "s)"
                       ++ (if coQuiet opts then "" else "\n    " ++ indent msg))
             if coFailFast opts then pure True else installUnchecked env d >> pure False
   loop (0, emptyTables) ls

@@ -4,15 +4,15 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Keith Adler
 -}
 {-# LANGUAGE MagicHash #-}
--- | Kernel expressions. Every node caches its hash, the range of its loose bound variables, and whether it
--- mentions a free variable or a universe parameter. Equality ignores binder names and binder annotations,
--- as the kernel does.
+-- | Kernel expressions. Every node caches its hash, its size, the range of its loose bound variables, and whether
+-- it mentions a free variable or a universe parameter. Equality ignores binder names and binder annotations, as
+-- the kernel does. See docs/design.md for why terms are not hash-consed.
 module Tenet.Expr
   ( Expr, Info (..), BinderInfo (..), Literal (..), FVarId
   , pattern BVar, pattern FVar, pattern Sort, pattern Const, pattern App
   , pattern Lam, pattern Pi, pattern Let, pattern Lit, pattern Proj
-  , exprHash, looseBVarRange, hasLooseBVars, hasFVar, hasLevelParam
-  , eqExprStrict, ptrEq
+  , exprHash, exprSize, looseBVarRange, hasLooseBVars, hasFVar, hasLevelParam
+  , ptrEq
   , mkApp, mkAppList, mkRevApp, getAppFn, getAppArgs, getAppRevArgs, getAppNumArgs
   , isConstOf, isAppOfArity, mkArrow, mkProp, mkNatLit, mkStrLit, mkConstE
   , isNatLit, isStrLit, isBVarOf, isBinding
@@ -21,7 +21,10 @@ module Tenet.Expr
 
 import Data.Bits (xor, shiftL, shiftR)
 import qualified Data.Text as T
+import Control.Monad (when)
 import GHC.Exts (isTrue#, reallyUnsafePtrEquality#)
+import System.IO.Unsafe (unsafeDupablePerformIO)
+import Tenet.HTable
 import Tenet.Level
 import Tenet.Name
 
@@ -38,6 +41,7 @@ data Info = Info
   , iLBR :: {-# UNPACK #-} !Int   -- ^ loose bound variable range
   , iFV :: !Bool                  -- ^ mentions a free variable
   , iLP :: !Bool                  -- ^ mentions a universe parameter
+  , iSz :: {-# UNPACK #-} !Int    -- ^ node count, saturating; decides which subterms are worth memoizing
   }
 
 data Expr
@@ -69,6 +73,9 @@ infoOf = \case
 exprHash :: Expr -> Int
 exprHash = iHash . infoOf
 
+exprSize :: Expr -> Int
+exprSize = iSz . infoOf
+
 looseBVarRange :: Expr -> Int
 looseBVarRange = iLBR . infoOf
 
@@ -81,35 +88,41 @@ hasFVar = iFV . infoOf
 hasLevelParam :: Expr -> Bool
 hasLevelParam = iLP . infoOf
 
+-- ---------------------------------------------------------------- smart constructors
+
+-- | Saturating size addition (plus the node itself).
+addSz :: Int -> Int -> Int
+addSz a b = let s = a + b + 1 in if s < 0 || s > 1000000000 then 1000000000 else s
+
 mixH :: Int -> Int -> Int
 mixH a b = ((a `shiftL` 5) + a + (a `shiftR` 2)) `xor` (b * 0x1e3779b97f4a7c15)
 
--- ---------------------------------------------------------------- smart constructors
-
 mkBVar :: Int -> Expr
-mkBVar i = EBVar (Info (mixH 11 i) (i + 1) False False) i
+mkBVar i = EBVar (Info (mixH 11 i) (i + 1) False False 1) i
 
 mkFVar :: FVarId -> Expr
-mkFVar i = EFVar (Info (mixH 13 i) 0 True False) i
+mkFVar i = EFVar (Info (mixH 13 i) 0 True False 1) i
 
 mkSort :: Level -> Expr
-mkSort l = ESort (Info (mixH 17 (levelHash l)) 0 False (levelHasParam l)) l
+mkSort l = ESort (Info (mixH 17 (levelHash l)) 0 False (levelHasParam l) 1) l
 
 mkConstE :: Name -> [Level] -> Expr
 mkConstE n ls =
-  EConst (Info (foldl (\h l -> mixH h (levelHash l)) (mixH 19 (nameHash n)) ls) 0 False (any levelHasParam ls)) n ls
+  EConst (Info (foldl (\h l -> mixH h (levelHash l)) (mixH 19 (nameHash n)) ls) 0 False (any levelHasParam ls) 1) n ls
 
 mkAppE :: Expr -> Expr -> Expr
 mkAppE f a =
   let fi = infoOf f
       ai = infoOf a
-  in EApp (Info (mixH (mixH 23 (iHash fi)) (iHash ai)) (max (iLBR fi) (iLBR ai)) (iFV fi || iFV ai) (iLP fi || iLP ai)) f a
+  in EApp (Info (mixH (mixH 23 (iHash fi)) (iHash ai)) (max (iLBR fi) (iLBR ai)) (iFV fi || iFV ai) (iLP fi || iLP ai)
+                (addSz (iSz fi) (iSz ai))) f a
 
 binderInfo4 :: Int -> Expr -> Expr -> Info
 binderInfo4 tag d b =
   let di = infoOf d
       bi = infoOf b
   in Info (mixH (mixH tag (iHash di)) (iHash bi)) (max (iLBR di) (iLBR bi - 1)) (iFV di || iFV bi) (iLP di || iLP bi)
+          (addSz (iSz di) (iSz bi))
 
 mkLam :: Name -> BinderInfo -> Expr -> Expr -> Expr
 mkLam n bi d b = ELam (binderInfo4 29 d b) n bi d b
@@ -124,15 +137,16 @@ mkLet n t v b =
       bi = infoOf b
   in ELet (Info (mixH (mixH (mixH 37 (iHash ti)) (iHash vi)) (iHash bi))
                 (max (max (iLBR ti) (iLBR vi)) (iLBR bi - 1))
-                (iFV ti || iFV vi || iFV bi) (iLP ti || iLP vi || iLP bi)) n t v b
+                (iFV ti || iFV vi || iFV bi) (iLP ti || iLP vi || iLP bi)
+                (addSz (iSz ti) (addSz (iSz vi) (iSz bi)))) n t v b
 
 mkLit :: Literal -> Expr
-mkLit l = ELit (Info (mixH 41 (case l of NatLit n -> fromInteger n; StrLit s -> T.length s * 7 + T.foldl' (\h c -> h * 31 + fromEnum c) 5 s)) 0 False False) l
+mkLit l = ELit (Info (mixH 41 (case l of NatLit n -> fromInteger n; StrLit s -> T.length s * 7 + T.foldl' (\h c -> h * 31 + fromEnum c) 5 s)) 0 False False 1) l
 
 mkProj :: Name -> Int -> Expr -> Expr
 mkProj n i s =
   let si = infoOf s
-  in EProj (Info (mixH (mixH (mixH 43 (nameHash n)) i) (iHash si)) (iLBR si) (iFV si) (iLP si)) n i s
+  in EProj (Info (mixH (mixH (mixH 43 (nameHash n)) i) (iHash si)) (iLBR si) (iFV si) (iLP si) (addSz 1 (iSz si))) n i s
 
 pattern BVar :: Int -> Expr
 pattern BVar i <- EBVar _ i where BVar i = mkBVar i
@@ -168,42 +182,63 @@ pattern Proj n i s <- EProj _ n i s where Proj n i s = mkProj n i s
 
 -- ---------------------------------------------------------------- equality
 
-ptrEq :: a -> a -> Bool
-ptrEq a b = isTrue# (reallyUnsafePtrEquality# a b)
-{-# INLINE ptrEq #-}
-
--- | Structural equality ignoring binder names and annotations.
+-- | Structural equality ignoring binder names and annotations. Large terms in this kernel are shared DAGs, and
+-- comparing two equal copies node by node is exponential in the depth of the sharing, so big pairs that are
+-- not pointer-equal are compared with a table of the pairs already visited, as Lean's @expr_eq_fn@ does: a
+-- revisited pair is assumed equal, which is sound because any inequality aborts the whole comparison.
 instance Eq Expr where
   a == b
     | ptrEq a b = True
-    | exprHash a /= exprHash b = False
-    | otherwise = go a b
-    where
-      go x y | ptrEq x y = True
-      go (EBVar _ i) (EBVar _ j) = i == j
-      go (EFVar _ i) (EFVar _ j) = i == j
-      go (ESort _ l) (ESort _ m) = l == m
-      go (EConst _ n ls) (EConst _ m ms) = n == m && ls == ms
-      go (EApp _ f x) (EApp _ g y) = x == y && f == g
-      go (ELam _ _ _ d x) (ELam _ _ _ e y) = d == e && x == y
-      go (EPi _ _ _ d x) (EPi _ _ _ e y) = d == e && x == y
-      go (ELet _ _ t v x) (ELet _ _ u w y) = t == u && v == w && x == y
-      go (ELit _ l) (ELit _ m) = l == m
-      go (EProj _ n i x) (EProj _ m j y) = i == j && n == m && x == y
-      go _ _ = False
+    | iHash (infoOf a) /= iHash (infoOf b) = False
+    | iSz (infoOf a) <= eqMemoThreshold = eqSmall a b
+    | otherwise = unsafeDupablePerformIO (do t <- newHTable; eqMemo t a b)
 
--- | Equality that also compares binder names and annotations.
-eqExprStrict :: Expr -> Expr -> Bool
-eqExprStrict a b
-  | ptrEq a b = True
-  | exprHash a /= exprHash b = False
-  | otherwise = case (a, b) of
-      (App f x, App g y) -> eqExprStrict x y && eqExprStrict f g
-      (Lam n bi d x, Lam m bj e y) -> n == m && bi == bj && eqExprStrict d e && eqExprStrict x y
-      (Pi n bi d x, Pi m bj e y) -> n == m && bi == bj && eqExprStrict d e && eqExprStrict x y
-      (Let n t v x, Let m u w y) -> n == m && eqExprStrict t u && eqExprStrict v w && eqExprStrict x y
-      (Proj n i x, Proj m j y) -> n == m && i == j && eqExprStrict x y
-      _ -> a == b
+eqMemoThreshold :: Int
+eqMemoThreshold = 64
+
+eqSmall :: Expr -> Expr -> Bool
+eqSmall x y
+  | ptrEq x y = True
+  | iHash (infoOf x) /= iHash (infoOf y) = False
+  | otherwise = case (x, y) of
+      (EBVar _ i, EBVar _ j) -> i == j
+      (EFVar _ i, EFVar _ j) -> i == j
+      (ESort _ l, ESort _ m) -> l == m
+      (EConst _ n ls, EConst _ m ms) -> n == m && ls == ms
+      (EApp _ f a, EApp _ g b) -> eqSmall a b && eqSmall f g
+      (ELam _ _ _ d a, ELam _ _ _ e b) -> eqSmall d e && eqSmall a b
+      (EPi _ _ _ d a, EPi _ _ _ e b) -> eqSmall d e && eqSmall a b
+      (ELet _ _ t v a, ELet _ _ u w b) -> eqSmall t u && eqSmall v w && eqSmall a b
+      (ELit _ l, ELit _ m) -> l == m
+      (EProj _ n i a, EProj _ m j b) -> i == j && n == m && eqSmall a b
+      _ -> False
+
+eqMemo :: HTable (Expr, Expr) -> Expr -> Expr -> IO Bool
+eqMemo t x y
+  | ptrEq x y = pure True
+  | iHash (infoOf x) /= iHash (infoOf y) = pure False
+  | iSz (infoOf x) <= eqMemoThreshold = pure (eqSmall x y)
+  | otherwise = do
+      let h = iHash (infoOf x)
+      seen <- lookupBy t h (\(u, v) -> ptrEq u x && ptrEq v y)
+      case seen of
+        Just _ -> pure True
+        Nothing -> do
+          r <- case (x, y) of
+            (EApp _ f a, EApp _ g b) -> both (eqMemo t a b) (eqMemo t f g)
+            (ELam _ _ _ d a, ELam _ _ _ e b) -> both (eqMemo t d e) (eqMemo t a b)
+            (EPi _ _ _ d a, EPi _ _ _ e b) -> both (eqMemo t d e) (eqMemo t a b)
+            (ELet _ _ ty v a, ELet _ _ ty' w b) -> both (eqMemo t ty ty') (both (eqMemo t v w) (eqMemo t a b))
+            (EProj _ n i a, EProj _ m j b) -> if i == j && n == m then eqMemo t a b else pure False
+            _ -> pure False
+          when r $ insertH t h (x, y)
+          pure r
+  where
+    both p q = p >>= \ok -> if ok then q else pure False
+
+ptrEq :: a -> a -> Bool
+ptrEq a b = isTrue# (reallyUnsafePtrEquality# a b)
+{-# INLINE ptrEq #-}
 
 -- ---------------------------------------------------------------- application spines
 

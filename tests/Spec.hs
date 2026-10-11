@@ -64,7 +64,7 @@ main = do
 
   -- accepted fixtures
   forM_ ["Nat.add_succ.ndjson", "Nat.add_succ.v3.0.ndjson"] $ \f -> do
-    r <- checkFile defaultCheckOptions { coQuiet = True } (fixtures </> f)
+    r <- checkFile defaultCheckOptions { coSilent = True } (fixtures </> f)
     test (f ++ " is accepted") (null (rFailures r) && rFormatError r == Nothing && rChecked r > 0)
 
   -- the negative corpus
@@ -78,14 +78,14 @@ main = do
         rejects = get "rejects"
         defenseOff = case fieldMaybe "defenseOff" c of Just (JStr s) -> Just (T.unpack s); _ -> Nothing
         path = fixtures </> "invalid" </> file
-    r <- checkFile defaultCheckOptions { coQuiet = True } path
+    r <- checkFile defaultCheckOptions { coSilent = True } path
     test (file ++ " parses to the end") (rFormatError r == Nothing)
     test (file ++ " rejects exactly " ++ rejects) (map (showName . fName) (rFailures r) == [rejects])
     case defenseOff of
       Nothing -> pure ()
       Just d -> do
         test (file ++ " names a defense this checker has") (d == "TENET_NO_PRIMITIVE_CHECK")
-        r2 <- checkFile defaultCheckOptions { coQuiet = True, coPrimitiveCheck = False } path
+        r2 <- checkFile defaultCheckOptions { coSilent = True, coPrimitiveCheck = False } path
         test (file ++ " is accepted in full with its defense off") (null (rFailures r2) && rFormatError r2 == Nothing)
     pure file
   onDisk <- filter ((== ".ndjson") . takeExtension) <$> listDirectory (fixtures </> "invalid")

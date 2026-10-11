@@ -20,10 +20,14 @@ usage = unlines
   , ""
   , "usage: tenet-hs check FILE.ndjson [options]"
   , ""
+  , "exit codes: 0 every declaration accepted, 1 something rejected, 2 malformed export,"
+  , "  4 declined (the file needs compiled code, which an external checker will not trust)"
+  , ""
   , "options:"
   , "  --fail-fast            stop at the first rejected declaration"
   , "  --quiet                print only the name of each failure, not the reason"
   , "  --only A,B             check just these declarations; add everything else unchecked"
+  , "  --summary              print only the final line"
   , "  --no-compare           do not compare the exporter's inductive/recursor claims with the kernel's"
   , "  --no-primitive-check   take the Nat/String shortcuts on the name alone, as Lean's kernel does"
   , "  --max-unfolds N        deterministic work bound per declaration (default 100000000)"
@@ -66,13 +70,16 @@ runCheck argv = do
   if nfail == 0 && rFormatError r == Nothing
     then putStrLn ("OK: " ++ show (rChecked r) ++ " checked, 0 failed, " ++ show (rConstants r) ++ " constants, " ++ secs ++ "s")
     else do
-      putStrLn ("FAILED: " ++ show (rChecked r) ++ " checked, " ++ show nfail ++ " failed, " ++ secs ++ "s")
+      let declined = nfail > 0 && all fDeclined (rFailures r) && rFormatError r == Nothing
+      putStrLn ((if declined then "DECLINED: " else "FAILED: ") ++ show (rChecked r) ++ " checked, " ++ show nfail
+                ++ (if declined then " declined, " else " failed, ") ++ secs ++ "s")
       when (rFormatError r /= Nothing) $ exitWith (ExitFailure 2)
-      exitWith (ExitFailure 1)
+      exitWith (ExitFailure (if declined then 4 else 1))
   where
     parse [] file opts = pure (file, opts)
     parse ("--fail-fast" : r) f o = parse r f o { coFailFast = True }
     parse ("--quiet" : r) f o = parse r f o { coQuiet = True }
+    parse ("--summary" : r) f o = parse r f o { coSilent = True, coQuiet = True }
     parse ("--no-compare" : r) f o = parse r f o { coCompareInductive = False }
     parse ("--no-primitive-check" : r) f o = parse r f o { coPrimitiveCheck = False }
     parse ("--only" : v : r) f o = parse r f o { coOnly = Just (splitCommas v) }

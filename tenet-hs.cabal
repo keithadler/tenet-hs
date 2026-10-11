@@ -15,12 +15,13 @@ common shared
     default-language: GHC2021
     default-extensions: PatternSynonyms, ViewPatterns, LambdaCase, BangPatterns, OverloadedStrings, MultiWayIf, TupleSections
     ghc-options:      -O1 -Wall -Wno-name-shadowing -Wno-unused-do-bind -Wno-incomplete-uni-patterns -Wno-incomplete-record-selectors -Wno-incomplete-record-updates
-    build-depends:    base >=4 && <5, containers, bytestring, text, mtl
+    build-depends:    base >=4 && <5, containers, bytestring, text, mtl, array
 
 library
     import:           shared
     hs-source-dirs:   src
-    exposed-modules:  Tenet.Name
+    exposed-modules:  Tenet.HTable
+                      Tenet.Name
                       Tenet.Level
                       Tenet.Expr
                       Tenet.ExprOps

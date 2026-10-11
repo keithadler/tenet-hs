@@ -10,7 +10,7 @@ module Tenet.Export
   , Line (..), parseLine, exportDeclToDeclaration, exportDeclNames, exportDeclDisplay
   ) where
 
-import Control.Monad (forM, unless)
+import Control.Monad (forM, when)
 import qualified Data.ByteString as B
 import qualified Data.IntMap.Strict as IM
 import Data.Maybe (fromMaybe)
@@ -85,9 +85,9 @@ parseLine tbl bs = do
           e <- parseExpr tbl j
           LTable <$> addAt "expression" i e (\m -> tbl { tExprs = m }) (tExprs tbl)
       | otherwise = LDecl <$> parseDecl tbl j
+    -- indices need not be dense or in order, but each may be defined only once
     addAt what i v upd m = do
-      let expected = maybe 0 ((+ 1) . fst) (IM.lookupMax m)
-      unless (i == expected) $ Left ("table index " ++ show i ++ " is out of sequence for " ++ what ++ " (expected " ++ show expected ++ ")")
+      when (IM.member i m) $ Left (what ++ " index " ++ show i ++ " is defined twice")
       pure (upd (IM.insert i v m))
 
 parseMeta :: Json -> R ExportMeta
