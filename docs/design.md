@@ -62,8 +62,13 @@ inspects the environment while it rewrites.
 
 ## Caches
 
-Every cache is `HTable` (`src/Tenet/HTable.hs`): a small mutable table with chained buckets, where the caller
-supplies each key's hash and the equality test. It exists because of measurements, below.
+Every cache is `HTable` (`src/Tenet/HTable.hs`): a **lossy, direct-mapped** table. A hash selects exactly one
+slot and an insert overwrites whatever was there; the caller supplies each key's hash and the equality test. That
+is safe because every table in the checker (the infer, whnf and unfold caches, the sets of equalities already
+decided, the memo tables of substitution and equality) only ever skips work, so forgetting an entry costs time
+and never changes an answer. In exchange there are no chains to walk, nothing is allocated per insert beyond the
+value, and memory is bounded: a table starts at 32 slots, grows by 4x when it is being used hard, and stops at
+65,536 entries. It exists because of measurements, below.
 
 ## Fresh variables
 
@@ -99,6 +104,28 @@ Profiling decided most of this, and some of it contradicted what looked obvious.
 memoized it, and allocated 43 GB on one test. Replacing the persistent map with a mutable table
 ([`HTable`](../src/Tenet/HTable.hs)) and memoizing only larger subterms roughly halved `app-lam` (15.7 s to 7.8 s)
 and took all of `Init` from 67 s to 52 s.
+
+**Then memory.** With chained buckets every cache entry lived as long as the checker did, and on the arena's
+`magma-list-pair-n21` that was 10.9 GB resident: 114 s of useful work and 264 s of the collector copying it, on a
+machine that then paged. Making the table lossy and bounded took that test from 316 s to 47 s and from 10.9 GB
+to 3.6 GB. The cap then mattered a great deal. Capped at a million entries, `magma-list-deep-n36`, the heaviest
+test, held 3.5 GB live and did not finish in ten minutes on a laptop that was by then paging. Capped at 65,536 it
+holds 0.5 GB and checks in 198 s:
+
+| cap | `Init` | `pair-n21` | `deep-n36` |
+| --- | --- | --- | --- |
+| 1,048,576 | 52 s, 0.9 GB | 47 s, 3.6 GB | over 590 s, 3.5 GB (paging) |
+| 262,144 | 55 s, 0.94 GB | 38 s, 2.8 GB | 194 s, 1.8 GB |
+| 65,536 | 55 s, 0.94 GB | 33 s, 1.8 GB | 198 s, 0.5 GB |
+
+A forgetful cache costs `Init` three seconds and buys a factor of seven in live data on the hardest test; the
+process peak, which is what the arena scores, falls from several gigabytes to 1.5 GB there. On a copying
+collector, which needs room to copy into, live data is the number that matters.
+
+The first lossy version made `Init` 18% slower (61 s), and the cause was not collisions: changing the cap and the
+growth trigger moved nothing. It was that every substitution call allocates a fresh table, and the initial size
+was 256 slots. At 16 to 64 slots, growing on demand, the regression disappeared. A table that is created per
+call has to be cheap to create.
 
 **Equality second.** `cacheGet` was 16% of a profile with almost no allocation, which means expensive
 comparisons and not expensive lookups: two equal terms built separately were compared node by node. The

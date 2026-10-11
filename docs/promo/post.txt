@@ -1,0 +1,32 @@
+SINGLE POST (fits 280 with X's URL rule)
+
+tenet-hs: a second independent Lean 4 kernel, in Haskell. Free, Apache 2.0.
+
+It re-checks all of Init. Give every theorem another's proof and it rejects the same 41,378 that Tenet does.
+
+More independent kernels is better. I'll maintain both.
+
+github.com/keithadler/tenet-hs
+
+
+THREAD (each under 280)
+
+1/ tenet-hs: a second independent Lean 4 kernel, in Haskell. Free, Apache 2.0.
+
+It re-checks all of Init. Give every theorem another's proof and it rejects the same 41,378 that Tenet does.
+
+More independent kernels is better. I'll maintain both.
+
+github.com/keithadler/tenet-hs
+
+2/ It reads lean4export files and re-checks every declaration from scratch: 57,919 in Init, none rejected. It re-derives every constructor and recursor, nested and mutual inductives included, and compares them field for field with what the exporter wrote.
+
+3/ Its fuzzer found a real bug on the first run: 9 of 120 damaged files split it from Tenet. All one mistake in how it handled a rejected inductive. Fixed. Now 350 variants agree on every rejection.
+
+4/ It is slower than Tenet, two to five times on the arena's performance tests, and the docs say so, with the profiles and the hash-consing attempt that made it ten times worse. It builds with plain GHC and needs no packages.
+
+5/ Not planting a flag. I will maintain it with Tenet and the rest of the family, because every independent kernel is another chance to find a bug in the reference, in the others, or in the spec they all chase.
+
+
+TAGS (add 3 to the last reply)
+#lean4 #haskell #formalverification #opensource

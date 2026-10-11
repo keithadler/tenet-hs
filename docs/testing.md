@@ -46,9 +46,9 @@ done
 cabal run -v0 tenet-hs -- check ~/tenet-hs-exports/Init.ndjson --summary
 ```
 
-All of `Init` is 346 MB, 57,919 declarations, about a minute. It needs 2.3 GB of memory, because every
-expression of the export stays alive (later declarations refer to earlier ones by index, and the environment
-needs every type and value for unfolding).
+All of `Init` is 346 MB, 57,919 declarations, about a minute. Peak memory is 2.5 GB, of which 0.94 GB is live
+data: every expression of the export stays alive (later declarations refer to earlier ones by index, and the
+environment needs every type and value for unfolding), and the copying collector needs room to copy into.
 
 ## 3. Mutation: swap the proofs
 

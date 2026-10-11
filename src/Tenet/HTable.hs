@@ -34,7 +34,7 @@ spread h0 =
 
 initialSize, maxSize :: Int
 initialSize = 32
-maxSize = 1048576
+maxSize = 65536
 
 newHTable :: IO (HTable v)
 newHTable = do
@@ -71,7 +71,7 @@ insertH t h v = do
   writeIORef (htInserts t) (n + 1)
   -- grow while the table is being used hard and is below its cap; entries that collide while rehashing are lost
   let size = hi + 1
-  when (n + 1 > 1 * size && size < maxSize) $ do
+  when (n + 1 > 2 * size && size < maxSize) $ do
     let size' = size * 4
     ks' <- newArray (0, size' - 1) 0
     vs' <- newArray (0, size' - 1) emptySlot

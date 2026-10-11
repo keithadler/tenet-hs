@@ -1,0 +1,11 @@
+GITHUB DESCRIPTION (211 characters)
+An independent Lean 4 kernel in Haskell, and a checker for Lean exports. Re-derives every recursor, validates the Nat primitives, and agrees with Tenet on every rejection. No dependencies beyond GHC. Apache-2.0.
+
+TOPICS
+lean4 lean theorem-prover proof-checker type-checker kernel haskell formal-verification type-theory independent-verification
+
+WEBSITE
+https://arena.lean-lang.org   (once listed)
+
+TAG
+v0.1.0 (annotated)
