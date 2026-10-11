@@ -6,13 +6,13 @@ Authors: Keith Adler
 -- | Reading lean4export NDJSON (format major version 3): the shared name, level and expression tables, and
 -- the declarations in the order the exporter wrote them.
 module Tenet.Export
-  ( ExportMeta (..), Tables (..), emptyTables, ExportDecl (..), XInd (..), XCtor (..), XRec (..), XRule (..)
+  ( ExportMeta (..), Tables (..), newTables, ExportDecl (..), XInd (..), XCtor (..), XRec (..), XRule (..)
   , Line (..), parseLine, exportDeclToDeclaration, exportDeclNames, exportDeclDisplay
   ) where
 
-import Control.Monad (forM, when)
+import Control.Exception (evaluate)
+import Control.Monad (forM)
 import qualified Data.ByteString as B
-import qualified Data.IntMap.Strict as IM
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
 import Tenet.Env
@@ -20,17 +20,24 @@ import Tenet.Expr
 import Tenet.Json
 import Tenet.Level
 import Tenet.Name
+import Tenet.Table
 
 data ExportMeta = ExportMeta { mExporter :: String, mLean :: String, mFormat :: String }
 
 data Tables = Tables
-  { tNames :: !(IM.IntMap Name)
-  , tLevels :: !(IM.IntMap Level)
-  , tExprs :: !(IM.IntMap Expr)
+  { tNames :: Table Name
+  , tLevels :: Table Level
+  , tExprs :: Table Expr
   }
 
-emptyTables :: Tables
-emptyTables = Tables (IM.singleton 0 anonymous) (IM.singleton 0 LZero) IM.empty
+newTables :: IO Tables
+newTables = do
+  ns <- newTable
+  _ <- insertT ns 0 anonymous
+  ls <- newTable
+  _ <- insertT ls 0 LZero
+  es <- newTable
+  pure (Tables ns ls es)
 
 data XInd = XInd
   { xiName :: Name, xiLParams :: [Name], xiType :: Expr, xiNumParams :: Int, xiNumIndices :: Int
@@ -57,38 +64,32 @@ data ExportDecl
 
 data Line
   = LMeta ExportMeta
-  | LTable Tables
+  | LTable                 -- ^ a name, level or expression was added to the tables
   | LDecl ExportDecl
 
 type R a = Either String a
 
-parseLine :: Tables -> B.ByteString -> R Line
-parseLine tbl bs = do
-  j <- parseJson bs
-  case j of
-    JObj kvs -> dispatch kvs j
-    _ -> Left "expected a JSON object"
+parseLine :: Tables -> B.ByteString -> IO (R Line)
+parseLine tbl bs = case parseJson bs of
+  Left err -> pure (Left err)
+  Right j@(JObj kvs) -> dispatch kvs j
+  Right _ -> pure (Left "expected a JSON object")
   where
     has k kvs = maybe False (const True) (lookup k kvs)
     dispatch kvs j
-      | has "meta" kvs = LMeta <$> (field "meta" j >>= parseMeta)
-      | has "in" kvs = do
-          i <- field "in" j >>= asInt
-          n <- parseName tbl j
-          LTable <$> addAt "name" i n (\m -> tbl { tNames = m }) (tNames tbl)
-      | has "il" kvs = do
-          i <- field "il" j >>= asInt
-          l <- parseLevel tbl j
-          LTable <$> addAt "level" i l (\m -> tbl { tLevels = m }) (tLevels tbl)
-      | has "ie" kvs = do
-          i <- field "ie" j >>= asInt
-          e <- parseExpr tbl j
-          LTable <$> addAt "expression" i e (\m -> tbl { tExprs = m }) (tExprs tbl)
-      | otherwise = LDecl <$> parseDecl tbl j
+      | has "meta" kvs = pure (LMeta <$> (field "meta" j >>= parseMeta))
+      | has "in" kvs = add "name" (tNames tbl) (field "in" j >>= asInt) (parseName tbl j)
+      | has "il" kvs = add "level" (tLevels tbl) (field "il" j >>= asInt) (parseLevel tbl j)
+      | has "ie" kvs = add "expression" (tExprs tbl) (field "ie" j >>= asInt) (parseExpr tbl j)
+      | otherwise = pure (LDecl <$> parseDecl tbl j)
     -- indices need not be dense or in order, but each may be defined only once
-    addAt what i v upd m = do
-      when (IM.member i m) $ Left (what ++ " index " ++ show i ++ " is defined twice")
-      pure (upd (IM.insert i v m))
+    add what table ei ev = case (ei, ev) of
+      (Right i, Right v) -> do
+        -- evaluate before storing: a lazy entry would keep its whole parsed JSON line alive until first use
+        ok <- evaluate v >>= insertT table i
+        pure (if ok then Right LTable else Left (what ++ " index " ++ show i ++ " is defined twice"))
+      (Left err, _) -> pure (Left err)
+      (_, Left err) -> pure (Left err)
 
 parseMeta :: Json -> R ExportMeta
 parseMeta j = do
@@ -98,17 +99,17 @@ parseMeta j = do
 nameAt :: Tables -> Json -> R Name
 nameAt tbl j = do
   i <- asInt j
-  maybe (Left ("unknown name index " ++ show i)) Right (IM.lookup i (tNames tbl))
+  maybe (Left ("unknown name index " ++ show i)) Right (lookupT (tNames tbl) i)
 
 levelAt :: Tables -> Json -> R Level
 levelAt tbl j = do
   i <- asInt j
-  maybe (Left ("unknown level index " ++ show i)) Right (IM.lookup i (tLevels tbl))
+  maybe (Left ("unknown level index " ++ show i)) Right (lookupT (tLevels tbl) i)
 
 exprAt :: Tables -> Json -> R Expr
 exprAt tbl j = do
   i <- asInt j
-  maybe (Left ("unknown expression index " ++ show i)) Right (IM.lookup i (tExprs tbl))
+  maybe (Left ("unknown expression index " ++ show i)) Right (lookupT (tExprs tbl) i)
 
 namesAt :: Tables -> Json -> R [Name]
 namesAt tbl j = asArray j >>= mapM (nameAt tbl)

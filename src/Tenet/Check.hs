@@ -5,18 +5,17 @@ Authors: Keith Adler
 -}
 -- | Replaying an export: check every declaration in order and report what cannot be accepted.
 module Tenet.Check
-  ( CheckOptions (..), defaultCheckOptions, Failure (..), Report (..), checkFile, checkLines
+  ( CheckOptions (..), defaultCheckOptions, Failure (..), Report (..), checkFile, checkLines, checkStream
   ) where
 
 import Control.Exception
 import Control.Monad
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString.Lazy.Char8 as BLC
 import Data.IORef
 import Data.List (intercalate)
 import qualified Data.Set as S
 import GHC.Clock (getMonotonicTime)
+import System.IO
 import Tenet.Add
 import Tenet.Env
 import Tenet.Export
@@ -58,13 +57,24 @@ data Report = Report
   , rFormatError :: Maybe String
   }
 
+-- | Check an export, reading it line by line: the file is far larger than anything that should be held at once.
 checkFile :: CheckOptions -> FilePath -> IO Report
-checkFile opts path = do
-  contents <- BL.readFile path
-  checkLines opts (map BL.toStrict (BLC.lines contents))
+checkFile opts path = withFile path ReadMode $ \h -> do
+  hSetBinaryMode h True
+  hSetBuffering h (BlockBuffering (Just 1048576))
+  checkStream opts (do eof <- hIsEOF h; if eof then pure Nothing else Just <$> B.hGetLine h)
 
 checkLines :: CheckOptions -> [B.ByteString] -> IO Report
 checkLines opts ls = do
+  ref <- newIORef ls
+  checkStream opts (do xs <- readIORef ref
+                       case xs of
+                         [] -> pure Nothing
+                         (x : rest) -> writeIORef ref rest >> pure (Just x))
+
+-- | Check an export given an action that produces its next line.
+checkStream :: CheckOptions -> IO (Maybe B.ByteString) -> IO Report
+checkStream opts nextLine = do
   t0 <- getMonotonicTime
   env <- newEnv defaultOptions { optPrimitiveCheck = coPrimitiveCheck opts, optMaxUnfolds = coMaxUnfolds opts }
   failures <- newIORef []
@@ -75,16 +85,21 @@ checkLines opts ls = do
       selected d = case only of
         Nothing -> True
         Just s -> any (\n -> S.member (showName n) s) (exportDeclNames d)
-      loop _ [] = pure ()
-      loop (lineNo :: Int, tbl) (l : rest)
-        | B.null l = loop (lineNo + 1, tbl) rest
-        | otherwise = case parseLine tbl l of
-            Left e -> writeIORef fmtErr (Just ("line " ++ show (lineNo + 1) ++ ": " ++ e))
-            Right (LMeta m) -> writeIORef meta (Just m) >> loop (lineNo + 1, tbl) rest
-            Right (LTable tbl') -> loop (lineNo + 1, tbl') rest
-            Right (LDecl d) -> do
-              stop <- if selected d then checkOne d else installUnchecked env d >> pure False
-              unless stop $ loop (lineNo + 1, tbl) rest
+      loop !lineNo tbl = do
+        next <- nextLine
+        case next of
+          Nothing -> pure ()
+          Just l
+            | B.null l -> loop (lineNo + 1) tbl
+            | otherwise -> do
+                parsed <- parseLine tbl l
+                case parsed of
+                  Left e -> writeIORef fmtErr (Just ("line " ++ show (lineNo + 1) ++ ": " ++ e))
+                  Right (LMeta m) -> writeIORef meta (Just m) >> loop (lineNo + 1) tbl
+                  Right LTable -> loop (lineNo + 1) tbl
+                  Right (LDecl d) -> do
+                    stop <- if selected d then checkOne d else installUnchecked env d >> pure False
+                    unless stop $ loop (lineNo + 1) tbl
       checkOne d = do
         t1 <- getMonotonicTime
         r <- try (checkDecl env opts d)
@@ -103,7 +118,8 @@ checkLines opts ls = do
             unless (coSilent opts) $ putStrLn ("FAIL " ++ kind ++ " " ++ showName n ++ " (" ++ show2 (t2 - t1) ++ "s)"
                       ++ (if coQuiet opts then "" else "\n    " ++ indent msg))
             if coFailFast opts then pure True else installUnchecked env d >> pure False
-  loop (0, emptyTables) ls
+  tables <- newTables
+  loop (0 :: Int) tables
   t3 <- getMonotonicTime
   fs <- reverse <$> readIORef failures
   c <- readIORef checked

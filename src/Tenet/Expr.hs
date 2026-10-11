@@ -19,7 +19,7 @@ module Tenet.Expr
   , showExpr
   ) where
 
-import Data.Bits (xor, shiftL, shiftR)
+import Data.Bits (bit, shiftL, shiftR, testBit, xor, (.&.), (.|.))
 import qualified Data.Text as T
 import Control.Monad (when)
 import GHC.Exts (isTrue#, reallyUnsafePtrEquality#)
@@ -36,25 +36,47 @@ data BinderInfo = BDefault | BImplicit | BStrictImplicit | BInstImplicit
 data Literal = NatLit !Integer | StrLit !T.Text
   deriving (Eq, Show)
 
+-- | Facts cached on every node, in two words: the structural hash, and one word packing the range of loose
+-- bound variables (24 bits), whether the term mentions a free variable and a universe parameter (2 bits), and its
+-- node count, saturating (the rest). Three separate fields cost five words and an indirection on every node,
+-- which was most of the memory of a large export.
 data Info = Info
   { iHash :: {-# UNPACK #-} !Int
-  , iLBR :: {-# UNPACK #-} !Int   -- ^ loose bound variable range
-  , iFV :: !Bool                  -- ^ mentions a free variable
-  , iLP :: !Bool                  -- ^ mentions a universe parameter
-  , iSz :: {-# UNPACK #-} !Int    -- ^ node count, saturating; decides which subterms are worth memoizing
+  , iMeta :: {-# UNPACK #-} !Int
   }
 
+iLBR :: Info -> Int
+iLBR i = iMeta i .&. 0xFFFFFF
+{-# INLINE iLBR #-}
+
+iFV :: Info -> Bool
+iFV i = testBit (iMeta i) 24
+{-# INLINE iFV #-}
+
+iLP :: Info -> Bool
+iLP i = testBit (iMeta i) 25
+{-# INLINE iLP #-}
+
+iSz :: Info -> Int
+iSz i = iMeta i `shiftR` 26
+{-# INLINE iSz #-}
+
+mkMeta :: Int -> Bool -> Bool -> Int -> Int
+mkMeta lbr fv lp sz =
+  (min lbr 0xFFFFFF) .|. (if fv then bit 24 else 0) .|. (if lp then bit 25 else 0) .|. (min sz 0x3FFFFFFF `shiftL` 26)
+{-# INLINE mkMeta #-}
+
 data Expr
-  = EBVar !Info !Int
-  | EFVar !Info !FVarId
-  | ESort !Info !Level
-  | EConst !Info !Name [Level]
-  | EApp !Info !Expr !Expr
-  | ELam !Info !Name !BinderInfo !Expr !Expr
-  | EPi !Info !Name !BinderInfo !Expr !Expr
-  | ELet !Info !Name !Expr !Expr !Expr
-  | ELit !Info !Literal
-  | EProj !Info !Name !Int !Expr
+  = EBVar {-# UNPACK #-} !Info !Int
+  | EFVar {-# UNPACK #-} !Info !FVarId
+  | ESort {-# UNPACK #-} !Info !Level
+  | EConst {-# UNPACK #-} !Info !Name [Level]
+  | EApp {-# UNPACK #-} !Info !Expr !Expr
+  | ELam {-# UNPACK #-} !Info !Name !BinderInfo !Expr !Expr
+  | EPi {-# UNPACK #-} !Info !Name !BinderInfo !Expr !Expr
+  | ELet {-# UNPACK #-} !Info !Name !Expr !Expr !Expr
+  | ELit {-# UNPACK #-} !Info !Literal
+  | EProj {-# UNPACK #-} !Info !Name !Int !Expr
 
 infoOf :: Expr -> Info
 infoOf = \case
@@ -98,31 +120,31 @@ mixH :: Int -> Int -> Int
 mixH a b = ((a `shiftL` 5) + a + (a `shiftR` 2)) `xor` (b * 0x1e3779b97f4a7c15)
 
 mkBVar :: Int -> Expr
-mkBVar i = EBVar (Info (mixH 11 i) (i + 1) False False 1) i
+mkBVar i = EBVar (Info (mixH 11 i) (mkMeta (i + 1) False False 1)) i
 
 mkFVar :: FVarId -> Expr
-mkFVar i = EFVar (Info (mixH 13 i) 0 True False 1) i
+mkFVar i = EFVar (Info (mixH 13 i) (mkMeta 0 True False 1)) i
 
 mkSort :: Level -> Expr
-mkSort l = ESort (Info (mixH 17 (levelHash l)) 0 False (levelHasParam l) 1) l
+mkSort l = ESort (Info (mixH 17 (levelHash l)) (mkMeta 0 False (levelHasParam l) 1)) l
 
 mkConstE :: Name -> [Level] -> Expr
 mkConstE n ls =
-  EConst (Info (foldl (\h l -> mixH h (levelHash l)) (mixH 19 (nameHash n)) ls) 0 False (any levelHasParam ls) 1) n ls
+  EConst (Info (foldl (\h l -> mixH h (levelHash l)) (mixH 19 (nameHash n)) ls) (mkMeta 0 False (any levelHasParam ls) 1)) n ls
 
 mkAppE :: Expr -> Expr -> Expr
 mkAppE f a =
   let fi = infoOf f
       ai = infoOf a
-  in EApp (Info (mixH (mixH 23 (iHash fi)) (iHash ai)) (max (iLBR fi) (iLBR ai)) (iFV fi || iFV ai) (iLP fi || iLP ai)
-                (addSz (iSz fi) (iSz ai))) f a
+  in EApp (Info (mixH (mixH 23 (iHash fi)) (iHash ai))
+                (mkMeta (max (iLBR fi) (iLBR ai)) (iFV fi || iFV ai) (iLP fi || iLP ai) (addSz (iSz fi) (iSz ai)))) f a
 
 binderInfo4 :: Int -> Expr -> Expr -> Info
 binderInfo4 tag d b =
   let di = infoOf d
       bi = infoOf b
-  in Info (mixH (mixH tag (iHash di)) (iHash bi)) (max (iLBR di) (iLBR bi - 1)) (iFV di || iFV bi) (iLP di || iLP bi)
-          (addSz (iSz di) (iSz bi))
+  in Info (mixH (mixH tag (iHash di)) (iHash bi))
+          (mkMeta (max (iLBR di) (iLBR bi - 1)) (iFV di || iFV bi) (iLP di || iLP bi) (addSz (iSz di) (iSz bi)))
 
 mkLam :: Name -> BinderInfo -> Expr -> Expr -> Expr
 mkLam n bi d b = ELam (binderInfo4 29 d b) n bi d b
@@ -136,17 +158,17 @@ mkLet n t v b =
       vi = infoOf v
       bi = infoOf b
   in ELet (Info (mixH (mixH (mixH 37 (iHash ti)) (iHash vi)) (iHash bi))
-                (max (max (iLBR ti) (iLBR vi)) (iLBR bi - 1))
-                (iFV ti || iFV vi || iFV bi) (iLP ti || iLP vi || iLP bi)
-                (addSz (iSz ti) (addSz (iSz vi) (iSz bi)))) n t v b
+                (mkMeta (max (max (iLBR ti) (iLBR vi)) (iLBR bi - 1))
+                        (iFV ti || iFV vi || iFV bi) (iLP ti || iLP vi || iLP bi)
+                        (addSz (iSz ti) (addSz (iSz vi) (iSz bi))))) n t v b
 
 mkLit :: Literal -> Expr
-mkLit l = ELit (Info (mixH 41 (case l of NatLit n -> fromInteger n; StrLit s -> T.length s * 7 + T.foldl' (\h c -> h * 31 + fromEnum c) 5 s)) 0 False False 1) l
+mkLit l = ELit (Info (mixH 41 (case l of NatLit n -> fromInteger n; StrLit s -> T.length s * 7 + T.foldl' (\h c -> h * 31 + fromEnum c) 5 s)) (mkMeta 0 False False 1)) l
 
 mkProj :: Name -> Int -> Expr -> Expr
 mkProj n i s =
   let si = infoOf s
-  in EProj (Info (mixH (mixH (mixH 43 (nameHash n)) i) (iHash si)) (iLBR si) (iFV si) (iLP si) (addSz 1 (iSz si))) n i s
+  in EProj (Info (mixH (mixH (mixH 43 (nameHash n)) i) (iHash si)) (mkMeta (iLBR si) (iFV si) (iLP si) (addSz 1 (iSz si)))) n i s
 
 pattern BVar :: Int -> Expr
 pattern BVar i <- EBVar _ i where BVar i = mkBVar i

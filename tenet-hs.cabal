@@ -21,6 +21,7 @@ library
     import:           shared
     hs-source-dirs:   src
     exposed-modules:  Tenet.HTable
+                      Tenet.Table
                       Tenet.Name
                       Tenet.Level
                       Tenet.Expr

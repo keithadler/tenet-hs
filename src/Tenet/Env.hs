@@ -67,13 +67,13 @@ data Safety = Unsafe | Safe | Partial
 data QuotKind = QType | QCtor | QLift | QInd
   deriving (Eq, Show)
 
-data RecRule = RecRule { rrCtor :: !Name, rrNumFields :: !Int, rrRhs :: Expr }
+data RecRule = RecRule { rrCtor :: !Name, rrNumFields :: !Int, rrRhs :: !Expr }
 
 data ConstKind
   = KAxiom { kUnsafe :: !Bool }
-  | KDef { kValue :: Expr, kHints :: !Hints, kSafety :: !Safety, kAll :: [Name] }
-  | KThm { kValue :: Expr, kAll :: [Name] }
-  | KOpaque { kValue :: Expr, kUnsafe :: !Bool, kAll :: [Name] }
+  | KDef { kValue :: !Expr, kHints :: !Hints, kSafety :: !Safety, kAll :: [Name] }
+  | KThm { kValue :: !Expr, kAll :: [Name] }
+  | KOpaque { kValue :: !Expr, kUnsafe :: !Bool, kAll :: [Name] }
   | KQuot { kQuot :: !QuotKind }
   | KInduct { kNumParams :: !Int, kNumIndices :: !Int, kAll :: [Name], kCtors :: [Name], kNumNested :: !Int
             , kIsRec :: !Bool, kUnsafe :: !Bool, kReflexive :: !Bool }
@@ -84,8 +84,8 @@ data ConstKind
 data ConstantInfo = ConstantInfo
   { ciName :: !Name
   , ciLParams :: [Name]
-  , ciType :: Expr
-  , ciKind :: ConstKind
+  , ciType :: !Expr
+  , ciKind :: !ConstKind
   }
 
 -- | The value the kernel may unfold: definitions and theorems. Opaque constants are never unfolded.
