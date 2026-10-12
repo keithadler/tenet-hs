@@ -51,10 +51,12 @@ arena scores a timeout as a decline anyway, so declining only forfeited any chan
 
 The risk worth guarding is memory. The run line gives the runtime a 12 GB heap cap, and the runtime exits with
 code 251 when it is reached. The run line maps 251 to the arena's decline, exactly as it maps the compiled-code
-decline (4), so a corpus that needs more memory than the cap is scored as declined and not as an error. The same
-line selects the non-moving collector (`+RTS -xn`), which costs about 6% in time and saves about a third of peak
-memory on inputs of this size. Both were checked from a fresh clone: a corpus run under a deliberately tiny cap
-exits 2, and the whole published suite gives the same verdicts with the flags as without.
+decline (4), so a corpus that needs more memory than the cap is scored as declined and not as an error. The run line also
+selects the non-moving collector (`+RTS -xn`), but only for inputs above 1 GB: there it saves about a third of peak
+memory for a few percent in time. On the small inputs of the `perf/` tests, which have a large live heap, it is
+about 2.5 times slower (`magma-list-deep-n36` took 362 s against a 390 s limit), so it is not used there. That
+was found by running the suite under the flags, which is why the suite is run under the exact run line. A corpus run
+under a deliberately tiny cap exits 2.
 
 ## One worker
 

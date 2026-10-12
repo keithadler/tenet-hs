@@ -42,10 +42,13 @@ run: |
   # is reached. Neither is a claim the proof is invalid, only that this checker will not or cannot vouch
   # for it, so both map to the arena's 2. Anything else means the checker could not process the file,
   # which is an error and is left to surface as one rather than being hidden as a decline.
-  # -xn is the non-moving collector: about a third less peak memory for about 6% more time, which is the
-  # right trade on the multi-gigabyte corpora, where the copying collector needs room to copy into.
+  # The non-moving collector (-xn) saves about a third of peak memory on the multi-gigabyte corpora, where
+  # the copying collector needs room to copy into, so it is used above 1 GB of input. On small inputs with a
+  # large live heap, such as the perf/ tests, it is about 2.5 times slower, so it is not used there.
   c=0
-  ./tenet-hs-arena check "$IN" --summary +RTS -xn -M12g -RTS || c=$?
+  gc=""
+  if [ "$(wc -c < "$IN")" -gt 1000000000 ]; then gc="-xn"; fi
+  ./tenet-hs-arena check "$IN" --summary +RTS $gc -M12g -RTS || c=$?
   case $c in
     0|1)   exit $c ;;
     4|251) exit 2 ;;
