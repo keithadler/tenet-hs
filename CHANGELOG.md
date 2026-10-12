@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1
+
+Memory, and a Mathlib result.
+
+- About 2.5 times less memory. Expression metadata is two words instead of five plus an indirection, the import
+  tables are mutable arrays instead of maps, entries and constant fields are strict, and the input is streamed
+  with a strict counter. `Init` peaks at 0.84 GB (was 2.5 GB); the arena's heaviest test, `magma-list-deep-n36`,
+  at 0.86 GB and 146 s (was 1.5 GB and 199 s); `magma-list-pair-n21` at 2.7 GB and 25 s (was 5.0 GB and 34 s).
+- Two slices of Mathlib check: 128,265 and 405,144 declarations, 0 failed. With every proof swapped, the larger
+  slice rejects the identical 275,042 declarations Tenet does. All of Mathlib has not been checked: lean4export
+  stalled while exporting it.
+- The Lean Kernel Arena's published suite is still 196 of 196, and 150 more fuzzed variants agree with Tenet.
+
 ## 0.1.0
 
 First release. A Lean 4 kernel in Haskell and a checker for lean4export files.
