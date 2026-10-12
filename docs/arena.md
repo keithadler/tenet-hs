@@ -37,6 +37,25 @@ So `tenet-hs check` exits **4** and prints `DECLINED` when every failure is of t
 to the arena's 2. Exit 2 is already taken by "malformed export", which is why the numbers differ. The negative
 corpus records which outcome each case expects, so the distinction cannot quietly collapse in either direction.
 
+## Every corpus is enabled, and memory has a cap
+
+The definition does not decline any test. The arena's large corpora are `init` (332 MB), `std` (569 MB), `con-leche`
+(526 MB), `cedar` (832 MB), `navier-stokes-euler` (1.5 GB), `cslib` (2.3 GB) and `mathlib` (5.8 GB, 110 million
+lines). tenet-hs has checked all of `Init`, and slices of Mathlib up to a 2.55 GB export with 405,144 declarations,
+so every corpus but `mathlib` is no larger than something already checked. `mathlib` is 2.3 times larger than the
+largest slice, and projected from it would want about 10 GB and about twenty minutes against a timeout of 5,680 s.
+That projection is untested, because a complete Mathlib export could not be produced on the development machine.
+
+An earlier version of the definition declined these five corpora as a precaution. That was too conservative: the
+arena scores a timeout as a decline anyway, so declining only forfeited any chance of a result.
+
+The risk worth guarding is memory. The run line gives the runtime a 12 GB heap cap, and the runtime exits with
+code 251 when it is reached. The run line maps 251 to the arena's decline, exactly as it maps the compiled-code
+decline (4), so a corpus that needs more memory than the cap is scored as declined and not as an error. The same
+line selects the non-moving collector (`+RTS -xn`), which costs about 6% in time and saves about a third of peak
+memory on inputs of this size. Both were checked from a fresh clone: a corpus run under a deliberately tiny cap
+exits 2, and the whole published suite gives the same verdicts with the flags as without.
+
 ## One worker
 
 The definition declares no `threads`, so the arena reserves its default of one CPU slot. That is the honest
@@ -57,9 +76,13 @@ tools/arena.sh suite
 
 ## Submitting
 
-1. Push this repository and note the commit.
-2. Replace `REPLACE_WITH_REV` in the definition with that commit.
-3. Validate it against the arena's `schemas/checker.json`.
-4. Open a pull request adding the file as `checkers/tenet-hs.yaml`.
+tenet-hs was added in [#263](https://github.com/leanprover/lean-kernel-arena/pull/263). To submit a new release:
 
-The arena does not update checkers automatically; a new release is a new pull request.
+1. Push the release and note the commit.
+2. Set `rev` and `version` in the definition, and validate it against the arena's `schemas/checker.json`.
+3. Check it from a fresh clone: run the `build` and `run` lines under `env -i` on a file that should be accepted, one that
+   should be rejected, one that is declined, and one run under a deliberately tiny heap cap.
+4. Open a pull request changing `checkers/tenet-hs.yaml`.
+
+The arena does not update checkers automatically; a new release is a new pull request. Text written by Claude is
+marked as such in the pull request, as the arena's maintainers asked.

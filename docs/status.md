@@ -143,4 +143,7 @@ One rule never fired: `DefEqStringLit`, a string literal compared against an app
   different version there may need changes.
 - **CI beyond one platform.** The workflow in `.github/workflows/ci.yml` passes on Linux with GHC 9.14.1 (unit tests, and the arena suite built with plain `ghc` and run under an empty environment). Nothing else has been tried.
 - **Speed.** The gap to Tenet is the main open item.
-- **The arena submission.** The checker definition is prepared; no pull request has been opened.
+- **The arena's large corpora.** Merged as [#263](https://github.com/leanprover/lean-kernel-arena/pull/263) with the corpora
+  declined as a precaution; the pending bump enables all of them behind a 12 GB heap cap that turns a memory blowup into a
+  decline. None of the five (`mathlib`, `cslib`, `cedar`, `con-leche`, `navier-stokes-euler`) has been run through the arena's
+  harness, so there is no arena number for any of them yet.
