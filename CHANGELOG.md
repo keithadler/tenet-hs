@@ -15,7 +15,8 @@ First release. A Lean 4 kernel in Haskell and a checker for lean4export files.
 - Reads format 3.0 and 3.1, with sparse and out-of-order table indices.
 - `--rules` reports which kernel rules an input exercised.
 
-Measured: all of `Init` (Lean 4.35.0-rc4), 57,919 declarations, 0 failed, 55 s. Every theorem in `Init` given the
+Measured: all of `Init` (Lean 4.35.0-rc4), 57,919 declarations, 0 failed, 48 s, 0.84 GB. A 19-area Mathlib slice,
+405,144 declarations, 0 failed, with the identical 275,042 swapped proofs rejected as by Tenet. Every theorem in `Init` given the
 previous theorem's proof: the same 41,378 rejected by this checker and by Tenet. 350 randomly damaged files:
 3,023 rejections, 0 disagreements with Tenet. The Lean Kernel Arena's published suite: 196 of 196. See
 [docs/status.md](docs/status.md) for every command, and for what has not been done.

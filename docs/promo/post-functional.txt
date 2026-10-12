@@ -21,7 +21,7 @@ github.com/keithadler/tenet-hs
 
 3/ It is not purely functional, and the docs say why. Substitution and the caches moved to mutable tables because persistent maps were 75% of the profile. Hash-consing, the functional favorite, made it ten times slower on these inputs. The numbers are in docs/design.md.
 
-4/ What it has been checked against: all 57,919 declarations of Init accepted; the same 41,378 swapped proofs rejected as Tenet rejects; 350 randomly damaged files with no disagreement; the Lean Kernel Arena's published suite, 196 of 196. No Mathlib yet.
+4/ What it has been checked against: all 57,919 declarations of Init accepted; the same 41,378 swapped proofs rejected as Tenet rejects; 350 randomly damaged files with no disagreement; the Lean Kernel Arena's published suite, 196 of 196; a 405,144-declaration slice of Mathlib, with the same swapped proofs rejected as Tenet rejects. Not all of Mathlib yet.
 
 5/ Not planting a flag. I will maintain it with Tenet and the rest of the family. Every independent kernel is another chance to find a bug in the reference, in the others, or in the spec they all chase.
 

@@ -12,8 +12,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 FACTS = {
     "init_decls": "57,919",
-    "init_secs": "55",
-    "swapped": "41,378",
+    "init_secs": "48",
+    "swapped": "275,042",
     "fuzz_variants": "350",
     "fuzz_first": "9 of 120",
     "repo": "github.com/keithadler/tenet-hs",
@@ -142,7 +142,7 @@ def main():
                        ("", "txt"), (f"OK: {F['init_decls'].replace(',', '')} checked,", "ok"), ("0 failed, 59349 constants,", "ok"), (f"{F['init_secs']}s", "ok")]}, out=out))
     paths.append(card("2-agree.png", (60, 30, 90), (18, 70, 110),
         f"{F['swapped']} proofs swapped. The same {F['swapped']} rejected.",
-        "Every theorem in Init got another theorem's proof. Two kernels, two languages, one verdict.",
+        "Every theorem in a 405,144-declaration slice of Mathlib got another theorem's proof. Two kernels, two languages, one verdict.",
         win={"box": (880, 190, 1510, 690), "title": "Terminal",
              "lines": [("rejected, by kernel", "dim"), ("", "txt"), (f"tenet-hs   {F['swapped']}", "ok"), (f"Tenet      {F['swapped']}", "ok"), ("", "txt"),
                        ("diff of the two lists:", "dim"), ("identical", "ok")]}, out=out))

@@ -12,8 +12,9 @@ What it has been run against:
 - The same file with every theorem handed another theorem's proof: it rejects 41,378, and Tenet, my C# kernel, rejects the identical 41,378.
 - 350 randomly damaged files compared against Tenet: no disagreements. The first run of that fuzzer found a real bug in tenet-hs, 9 of 120 files, and it is fixed.
 - The Lean Kernel Arena's published test suite: 196 of 196.
+- A 405,144-declaration slice of Mathlib across 19 areas: all accepted, and with every proof swapped it rejects the identical 275,042 declarations Tenet does.
 
-The honest parts. It is not purely functional: substitution and the caches use mutable tables, because persistent maps were 75% of the profile. I tried hash-consing, the functional favorite, and it was ten times slower on these inputs, so it went back out. It is two to five times slower than Tenet on the arena's performance tests, it is single-threaded, and I have not run Mathlib yet. The design notes have every profile and every dead end.
+The honest parts. It is not purely functional: substitution and the caches use mutable tables, because persistent maps were 75% of the profile. I tried hash-consing, the functional favorite, and it was ten times slower on these inputs, so it went back out. It is two to five times slower than Tenet on the arena's performance tests, it is single-threaded, and I have checked slices of Mathlib but not all of it: the exporter stalled on my laptop before it could write the whole thing. The design notes have every profile and every dead end.
 
 It builds with the GHC you already have and needs no packages.
 

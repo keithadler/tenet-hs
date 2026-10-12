@@ -16,7 +16,7 @@ on .NET. It needs nothing beyond the libraries that ship with GHC.
 
 ```
 $ tenet-hs check Init.ndjson --summary
-OK: 57919 checked, 0 failed, 59349 constants, 54.8s
+OK: 57919 checked, 0 failed, 59349 constants, 48.1s
 ```
 
 ## Why another kernel
@@ -42,8 +42,9 @@ nothing here is evidence until it sits next to a run that *should* fail.
 
 | | |
 | --- | --- |
-| **Accepts** all of `Init` (Lean 4.35.0-rc4) | 57,919 declarations, 0 failed, 55 s on one core |
-| **Rejects** it when every theorem is given another theorem's proof | 41,378 rejected, **the identical 41,378 that Tenet rejects** |
+| **Accepts** all of `Init` (Lean 4.35.0-rc4) | 57,919 declarations, 0 failed, 48 s on one core, 0.84 GB |
+| **Accepts** a 19-area slice of Mathlib with every dependency | 405,144 declarations, 0 failed, 463 s, 4.2 GB |
+| **Rejects** it when every theorem is given another theorem's proof | 41,378 rejected, **the identical 41,378 that Tenet rejects**; on the Mathlib slice, the identical 275,042 |
 | **Rejects** its [negative corpus](tests/fixtures/invalid) | 9 of 9, each at the one declaration it names, each defended case accepted in full with its defense off |
 | **Agrees** with Tenet on randomly damaged files | 350 variants, 3,023 rejections, 0 disagreements |
 | **Passes** the [Lean Kernel Arena](docs/arena.md)'s published suite | 196 of 196: all 71 `bad/` rejected, all 125 `good/` accepted |
@@ -142,7 +143,8 @@ arena's performance tests, and [design](docs/design.md#what-was-measured) says w
 ## Limitations
 
 - It reads lean4export NDJSON only. There is no `.olean` reader.
-- It is single-threaded. `Init` takes about a minute; Mathlib would take hours, and has not been run.
+- It is single-threaded. `Init` takes under a minute. Slices of Mathlib up to 405,144 declarations check, but all of
+  Mathlib has not been run: lean4export stalled while exporting it on my laptop, so there was no complete file to check.
 - It is slower than Tenet, by two to five times on the arena's performance tests.
 - Like Tenet it does not accelerate `Nat.log2`, which only makes it slower on terms that use it.
 - Built and tested with one GHC version.

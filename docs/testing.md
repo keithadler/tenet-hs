@@ -46,9 +46,10 @@ done
 cabal run -v0 tenet-hs -- check ~/tenet-hs-exports/Init.ndjson --summary
 ```
 
-All of `Init` is 346 MB, 57,919 declarations, about a minute. Peak memory is 2.5 GB, of which 0.94 GB is live
-data: every expression of the export stays alive (later declarations refer to earlier ones by index, and the
-environment needs every type and value for unfolding), and the copying collector needs room to copy into.
+All of `Init` is 346 MB, 57,919 declarations, under a minute, 0.84 GB peak. Every expression of the export stays
+alive (later declarations refer to earlier ones by index, and the environment needs every type and value for
+unfolding), so memory grows with the export: about 1.5 GB for a 572 MB Mathlib slice and 4.2 GB for a 2.55 GB one.
+For inputs that large, `+RTS -xn` (the non-moving collector) cuts peak memory by about a third for about 6% more time.
 
 ## 3. Mutation: swap the proofs
 

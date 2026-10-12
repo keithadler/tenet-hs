@@ -8,7 +8,9 @@ less time. Every acceptance number here sits next to a rejection number for that
 
 | Input | Result | Command |
 | --- | --- | --- |
-| `Init`, Lean 4.35.0-rc4 (346 MB) | 57,919 declarations, **0 failed**, 55 s, 2.5 GB peak (0.94 GB live) | `tenet-hs check Init.ndjson --summary` |
+| `Init`, Lean 4.35.0-rc4 (346 MB) | 57,919 declarations, **0 failed**, 48 s, 0.84 GB peak | `tenet-hs check Init.ndjson --summary` |
+| **A Mathlib slice**: the import closure of `Mathlib.Algebra.Ring.Basic` (572 MB) | 128,265 declarations, **0 failed**, 68 s, 1.5 GB peak | `tenet-hs check slice.ndjson --summary` |
+| **A broader Mathlib slice**: 19 areas (analysis, number theory, linear algebra, combinatorics, measure theory, algebraic geometry, category theory, Galois theory, manifolds, polynomial rings and more) with every dependency (2.55 GB) | 405,144 declarations, **0 failed**, 463 s, 4.2 GB peak | `tenet-hs check slice.ndjson --summary +RTS -xn` |
 | `Init.Core`, `Init.Prelude` | 0 failed, under a second each | same |
 | `Nat.add_succ`, format 3.1 and 3.0 | accepted | `cabal test` |
 
@@ -22,6 +24,7 @@ that the exporter's recursors, which a malicious file could get wrong, are never
 | --- | --- | --- |
 | The negative corpus, 9 files | **9 of 9 rejected**, each at the one declaration its manifest entry names; each defended case accepted in full with its defense off | `cabal test` |
 | `Init` with every theorem given the previous theorem's proof | **41,378 rejected**, the identical set Tenet rejects | `tools/swap-proofs.py`, then `tenet-hs check … --quiet --max-unfolds 3000000` |
+| The 19-area Mathlib slice, same mutation (279,094 theorems given another's proof) | **275,042 rejected**, the identical set Tenet rejects; 130,102 still check | same |
 | `Init.Core`, same mutation | 637 of 650 rejected, the identical 637 Tenet rejects | same |
 
 The survivors of the swap are not failures. They were handed a proof of a definitionally equal statement:
@@ -34,6 +37,7 @@ same ones, which is the stronger check than inspecting them.
 | --- | --- |
 | `tools/fuzz.py` on `Init.Prelude`, 250 variants, 3 mutations each | 2,196 rejections, **0 disagreements** |
 | `tools/fuzz.py` on `Init.Core`, 100 variants, 4 mutations each | 827 rejections, **0 disagreements** |
+| `tools/fuzz.py` on `Init.Prelude` again, 150 variants, on the final memory-optimized build | 1,694 rejections, **0 disagreements** |
 | The whole-`Init` swap above | the same 41,378 declarations in both |
 
 The first full fuzzer run, before these, found **9 disagreements in 120 variants**, all one bug in failure
@@ -50,7 +54,7 @@ Against the arena's published test suite, 196 files ([how to run it](arena.md)):
 | --- | --- |
 | `bad/`, must reject (71 files) | **71 of 71 rejected** |
 | `good/`, must accept (125 files) | **125 of 125 accepted** |
-| the two slowest, `perf/magma-list-deep-n36` and `perf/magma-list-pair-n21` | accepted in 198 s and 33 s on this laptop, inside the arena's per-test timeouts of 390 s and 260 s |
+| the two slowest, `perf/magma-list-deep-n36` and `perf/magma-list-pair-n21` | accepted in 146 s and 25 s on this laptop, inside the arena's per-test timeouts of 390 s and 260 s |
 
 The first run was 192 of 196. The four misses were two reader gaps (table indices that are sparse or out of order,
 which the format allows) and two performance tests. The readers are fixed, and the performance tests were a memory
@@ -61,15 +65,14 @@ evidence and not a guarantee; a timeout there would be scored as a decline, not 
 
 | | tenet-hs | Tenet |
 | --- | --- | --- |
-| `Init` | 55 s, 2.5 GB peak (0.94 GB live) | about 30 s on one worker |
-| `perf/app-lam` | 7.8 s | 2.0 s |
+| `Init` | 48 s, 0.84 GB peak | about 30 s on one worker |
+| `perf/app-lam` | 7.4 s, 4.2 GB peak | 2.0 s |
 | `perf/magma-list-deep-n21` | 6.1 s | 1.4 s |
-| `perf/magma-list-pair-n21` | 34 s, 5.0 GB peak (1.8 GB live) | 12 s |
-| `perf/magma-list-deep-n36` | 199 s, 1.5 GB peak (0.5 GB live) | 50 s |
+| `perf/magma-list-pair-n21` | 25 s, 2.7 GB peak | 12 s |
+| `perf/magma-list-deep-n36` | 146 s, 0.86 GB peak | 50 s |
 
-Peak is the resident set the operating system reports, which is what the arena scores; live is the collector's
-figure for data it must keep. A copying collector needs room to copy into, so peak runs two to three times live.
-Tenet's memory was not re-measured here.
+Peak is the resident set the operating system reports, which is what the arena scores. Tenet's memory was not
+re-measured here.
 
 Two to five times slower than Tenet on the arena's `perf/` tests, and about 1.8 times slower on all of `Init`
 against Tenet's own single-worker figure (Tenet's number is from its README, measured on its `.olean` path, not
@@ -128,8 +131,12 @@ One rule never fired: `DefEqStringLit`, a string literal compared against an app
 
 ## Not done yet
 
-- **Mathlib.** Not run. `Init` is the largest library checked; Mathlib is several times larger and would take
-  hours on one core.
+- **All of Mathlib.** Not checked. Two slices were (above, up to 405,144 declarations), but a complete export of
+  this Mathlib (about 6.6 GB, over 100 million expression records) could not be produced: lean4export stalled at
+  expression 100,663,291, which is 75% of 2^27 hash buckets, so I believe its own table resizing under memory
+  pressure on this 17 GB laptop. That is the exporter's limit and not the checker's, but it means the claim is
+  "slices of Mathlib", and a full run needs a machine that can export it. Projected from the slices, the checker
+  would want roughly 10 GB and about 20 minutes for it. That projection is untested.
 - **A `.olean` reader.** Tenet reads Lean's compiled modules directly; tenet-hs reads lean4export files only.
 - **Parallelism.** Single-threaded by design for now.
 - **Other GHC versions.** Built and tested with GHC 9.14.1 only. The arena's flake provides `ghc` too, and a

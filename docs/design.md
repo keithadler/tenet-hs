@@ -149,6 +149,26 @@ terms that were no longer interned fell back to structural comparison. Memoized 
 The lesson is specific to this workload, where most terms are short-lived intermediates; it says nothing about a
 checker whose terms mostly live long.
 
+**Memory at scale.** A kernel that keeps every expression of a large export alive is limited by how much each
+expression costs, and the first correct build cost far too much: a 572 MB Mathlib slice took 3.4 GB. Four changes,
+each found by a heap profile and not by guessing, brought that to 1.5 GB, and all of `Init` from 2.5 GB to 0.84 GB:
+
+1. **Cached facts in two words.** Each node carried its hash, the range of its loose bound variables, two flags and
+   its size as five fields and a separate record. Packing everything but the hash into one word and unpacking the
+   pair into the node halves the size of an application.
+2. **Arrays, not maps, for the import tables.** A persistent `IntMap` entry costs about as much as the term it
+   points to. The name, level and expression tables are growable mutable arrays, with an overflow map for the
+   sparse indices the format allows.
+3. **No lazy leftovers.** Table entries were stored as unevaluated thunks that kept their parsed JSON alive until
+   first use, and the constants' fields were lazy. Both are strict now.
+4. **A strict line counter.** The loop that reads the file carried its line number as a lazy value that was only
+   ever used in error messages, so it built a chain of ten million unevaluated `+ 1` thunks, 240 MB, on a
+   572 MB file. The input is also read line by line from the handle and not as a lazy list.
+
+The census that found these was `+RTS -hT`, and it needs one caution that cost an hour: with the non-moving
+collector (`-xn`) the census counts dead objects that have not been swept yet, and showed 1.6 GB of arrays that
+were not there. Profile with the normal collector.
+
 **The collector.** About half the wall time on the heavy tests is garbage collection, because the checker's
 caches keep everything alive and a copying collector copies live data. A larger nursery recovers 15 to 25%
 (`-A256m` takes `magma-list-deep-n21` from 6.2 s to 5.2 s) but the arena also scores peak memory, so the default
