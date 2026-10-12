@@ -124,7 +124,13 @@ checkStream opts nextLine = do
   fs <- reverse <$> readIORef failures
   c <- readIORef checked
   m <- readIORef meta
-  fe <- readIORef fmtErr
+  fe0 <- readIORef fmtErr
+  -- An export with no metadata record (an empty file, or something that is not lean4export output) has nothing in
+  -- it to vouch for. It must not read as "OK: 0 checked", which is what an exporter that died before writing
+  -- anything would otherwise look like.
+  let fe = case (fe0, m) of
+        (Nothing, Nothing) -> Just "no metadata record: not a lean4export file"
+        _ -> fe0
   n <- envSize env
   unv <- unvalidatedPrimitives env
   pure Report { rChecked = c, rConstants = n, rFailures = fs, rUnvalidated = unv, rSeconds = t3 - t0, rMeta = m, rFormatError = fe }

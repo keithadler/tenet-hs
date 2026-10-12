@@ -10,7 +10,7 @@ import qualified Data.ByteString as B
 import Data.IORef
 import Data.List (sort)
 import qualified Data.Text as T
-import System.Directory (listDirectory)
+import System.Directory (getTemporaryDirectory, listDirectory, removeFile)
 import System.Exit
 import System.FilePath ((</>), takeExtension)
 import Tenet.Check
@@ -66,6 +66,19 @@ main = do
   forM_ ["Nat.add_succ.ndjson", "Nat.add_succ.v3.0.ndjson"] $ \f -> do
     r <- checkFile defaultCheckOptions { coSilent = True } (fixtures </> f)
     test (f ++ " is accepted") (null (rFailures r) && rFormatError r == Nothing && rChecked r > 0)
+
+  -- an export with nothing to vouch for is never accepted
+  tmp <- getTemporaryDirectory
+  let emptyPath = tmp </> "tenet-hs-empty.ndjson"
+      noMetaPath = tmp </> "tenet-hs-nometa.ndjson"
+  B.writeFile emptyPath B.empty
+  real <- B.readFile (fixtures </> "Nat.add_succ.ndjson")
+  B.writeFile noMetaPath (B.drop 1 (B.dropWhile (/= 10) real))
+  forM_ [("an empty file", emptyPath), ("a file without a metadata record", noMetaPath)] $ \(what, path) -> do
+    r <- checkFile defaultCheckOptions { coSilent = True } path
+    test (what ++ " is a format error, not OK") (rFormatError r /= Nothing)
+  removeFile emptyPath
+  removeFile noMetaPath
 
   -- the negative corpus
   manifestBytes <- B.readFile (fixtures </> "invalid" </> "manifest.json")
