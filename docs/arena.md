@@ -41,10 +41,10 @@ corpus records which outcome each case expects, so the distinction cannot quietl
 
 The definition does not decline any test. The arena's large corpora are `init` (332 MB), `std` (569 MB), `con-leche`
 (526 MB), `cedar` (832 MB), `navier-stokes-euler` (1.5 GB), `cslib` (2.3 GB) and `mathlib` (5.8 GB, 110 million
-lines). tenet-hs has checked all of `Init`, and slices of Mathlib up to a 2.55 GB export with 405,144 declarations,
-so every corpus but `mathlib` is no larger than something already checked. `mathlib` is 2.3 times larger than the
-largest slice, and projected from it would want about 10 GB and about twenty minutes against a timeout of 5,680 s.
-That projection is untested, because a complete Mathlib export could not be produced on the development machine.
+lines). The arena has run all of them, and tenet-hs accepts every one ([status](status.md#the-lean-kernel-arena)),
+`mathlib` in 2746 s with a 12.3 GB peak against a 5680 s timeout. That was a projection when the corpora were first
+enabled (about 10 GB and twenty minutes, from a 2.55 GB slice); the real figures are higher on both counts, and the
+12 GB heap cap below was close enough to matter.
 
 An earlier version of the definition declined these five corpora as a precaution. That was too conservative: the
 arena scores a timeout as a decline anyway, so declining only forfeited any chance of a result.

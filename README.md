@@ -43,11 +43,11 @@ nothing here is evidence until it sits next to a run that *should* fail.
 | | |
 | --- | --- |
 | **Accepts** all of `Init` (Lean 4.35.0-rc4) | 57,919 declarations, 0 failed, 48 s on one core, 0.84 GB |
-| **Accepts** a 19-area slice of Mathlib with every dependency | 405,144 declarations, 0 failed, 463 s, 4.2 GB |
+| **Accepts** all of Mathlib on the arena's board | 5.8 GB, 110 M lines, accepted in 2746 s with a 12.3 GB peak (run by the arena; locally I checked slices of 128,265 and 405,144 declarations, 0 failed) |
 | **Rejects** it when every theorem is given another theorem's proof | 41,378 rejected, **the identical 41,378 that Tenet rejects**; on the Mathlib slice, the identical 275,042 |
 | **Rejects** its [negative corpus](tests/fixtures/invalid) | 9 of 9, each at the one declaration it names, each defended case accepted in full with its defense off |
 | **Agrees** with Tenet on randomly damaged files | 350 variants, 3,023 rejections, 0 disagreements |
-| **Passes** the [Lean Kernel Arena](docs/arena.md)'s published suite | 196 of 196: all 71 `bad/` rejected, all 125 `good/` accepted |
+| **Passes** the [Lean Kernel Arena](docs/arena.md) | all 233 tests with no wrong answer, decline, error or timeout, including `mathlib`, `cslib`, `cedar`, `con-leche` and `navier-stokes-euler` |
 | **Re-derives** every recursor | compared field for field with the exporter's, for every inductive in `Init`, nested and mutual included |
 
 The fuzzer's first full run found **9 disagreements in 120 variants**, all one bug in how a rejected
@@ -143,9 +143,10 @@ arena's performance tests, and [design](docs/design.md#what-was-measured) says w
 ## Limitations
 
 - It reads lean4export NDJSON only. There is no `.olean` reader.
-- It is single-threaded. `Init` takes under a minute. Slices of Mathlib up to 405,144 declarations check, but all of
-  Mathlib has not been run: lean4export stalled while exporting it on my laptop, so there was no complete file to check.
-- It is slower than Tenet, by two to five times on the arena's performance tests.
+- It is single-threaded and slow. `Init` takes under a minute, but all of Mathlib takes 46 minutes on the arena's runner,
+  14th of the 16 kernels that accept it, and it is the heaviest on the board in instructions. I could not run Mathlib
+  locally (lean4export stalled while exporting it on my laptop); the arena's run is the evidence.
+- It is slower than Tenet: two to five times on the arena's performance tests, and 6 times on `mathlib` (2746 s against 438 s).
 - Like Tenet it does not accelerate `Nat.log2`, which only makes it slower on terms that use it.
 - Built and tested with one GHC version.
 

@@ -48,18 +48,30 @@ for having more than one.
 
 ## The Lean Kernel Arena
 
-Against the arena's published test suite, 196 files ([how to run it](arena.md)):
+On the arena's own board (round commit `c6d13acb`, run on the arena's hardware, not this laptop), tenet-hs has a
+result for all 233 tests: **207 correct and 26 "either"** (the corner cases where either verdict is acceptable),
+the same breakdown as Tenet, with **no wrong answer, no decline, no error and no timeout**. That includes the
+published suite of 196 files ([how to run it locally](arena.md)) and the large corpora:
 
-| | Result |
-| --- | --- |
-| `bad/`, must reject (71 files) | **71 of 71 rejected** |
-| `good/`, must accept (125 files) | **125 of 125 accepted** |
-| the two slowest, `perf/magma-list-deep-n36` and `perf/magma-list-pair-n21` | accepted in 146 s and 25 s on this laptop, inside the arena's per-test timeouts of 390 s and 260 s |
+| Corpus | Export | Result | Wall time | Peak memory | The test's timeout |
+| --- | --- | --- | --- | --- | --- |
+| `init` | 332 MB | accepted | 68 s | 0.8 GB | 500 s |
+| `std` | 569 MB | accepted | 99 s | 1.4 GB | 590 s |
+| `con-leche` | 526 MB | accepted | 119 s | 1.7 GB | 720 s |
+| `cedar` | 832 MB | accepted | 120 s | 1.6 GB | 940 s |
+| `cslib` | 2.3 GB | accepted | 529 s | 4.2 GB | 1800 s |
+| `navier-stokes-euler` | 1.5 GB | accepted | 924 s | 3.2 GB | 2400 s |
+| **`mathlib`** | **5.8 GB, 110 M lines** | **accepted** | **2746 s** | **12.3 GB** | **5680 s** |
 
-The first run was 192 of 196. The four misses were two reader gaps (table indices that are sparse or out of order,
-which the format allows) and two performance tests. The readers are fixed, and the performance tests were a memory
-problem more than a speed one, see below. The arena's hardware is not this laptop, so the timing margin is
-evidence and not a guarantee; a timeout there would be scored as a decline, not as a wrong answer.
+`mathlib` is the whole library, as the arena exports it, and it is accepted. It was not run on the development
+machine, where a complete export could not be produced; this number is the arena's.
+
+It is correct and it is slow. On `mathlib` it is 14th of the 16 kernels that accept it: faster only than lean4lean
+(3148 s) and the official kernel (3356 s), against 438 s for Tenet, 514 s for nanoda and 55 s for the fastest. Its
+12.3 GB peak is about that of Tenet (12.4 GB), lean4lean (12.4 GB) and eink0rn (12.0 GB), and above the 7 to 8 GB
+of several others. It also took 18.0 trillion instructions, the most of any kernel on the board. Its history on
+the first run of the published suite was 192 of 196: two reader gaps (sparse and out-of-order table indices) and two
+slow tests, since fixed.
 
 ## Speed and memory
 
@@ -131,19 +143,13 @@ One rule never fired: `DefEqStringLit`, a string literal compared against an app
 
 ## Not done yet
 
-- **All of Mathlib.** Not checked. Two slices were (above, up to 405,144 declarations), but a complete export of
-  this Mathlib (about 6.6 GB, over 100 million expression records) could not be produced: lean4export stalled at
-  expression 100,663,291, which is 75% of 2^27 hash buckets, so I believe its own table resizing under memory
-  pressure on this 17 GB laptop. That is the exporter's limit and not the checker's, but it means the claim is
-  "slices of Mathlib", and a full run needs a machine that can export it. Projected from the slices, the checker
-  would want roughly 10 GB and about 20 minutes for it. That projection is untested.
+- **All of Mathlib, locally.** The arena has accepted it (above), but I could not reproduce that here: a complete
+  export of this Mathlib (about 6.6 GB) stalled in lean4export at expression 100,663,291, which is 75% of 2^27 hash
+  buckets, so I believe its own table resizing under memory pressure on this 17 GB laptop. Two slices were checked
+  locally (128,265 and 405,144 declarations, 0 failed), and the arena's run is the evidence for the whole library.
 - **A `.olean` reader.** Tenet reads Lean's compiled modules directly; tenet-hs reads lean4export files only.
 - **Parallelism.** Single-threaded by design for now.
 - **Other GHC versions.** Built and tested with GHC 9.14.1 only. The arena's flake provides `ghc` too, and a
   different version there may need changes.
 - **CI beyond one platform.** The workflow in `.github/workflows/ci.yml` passes on Linux with GHC 9.14.1 (unit tests, and the arena suite built with plain `ghc` and run under an empty environment). Nothing else has been tried.
 - **Speed.** The gap to Tenet is the main open item.
-- **The arena's large corpora.** Merged as [#263](https://github.com/leanprover/lean-kernel-arena/pull/263) with the corpora
-  declined as a precaution; the pending bump enables all of them behind a 12 GB heap cap that turns a memory blowup into a
-  decline. None of the five (`mathlib`, `cslib`, `cedar`, `con-leche`, `navier-stokes-euler`) has been run through the arena's
-  harness, so there is no arena number for any of them yet.

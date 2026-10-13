@@ -1,5 +1,12 @@
 # Changelog
 
+## Since 0.1.1
+
+The Lean Kernel Arena has run tenet-hs on all 233 of its tests: 207 correct and 26 "either", with no wrong answer,
+decline, error or timeout, including the whole of `mathlib` (accepted in 2746 s, 12.3 GB peak), `cslib`, `cedar`,
+`con-leche` and `navier-stokes-euler`. It is among the slowest kernels that accept `mathlib`. See
+[docs/status.md](docs/status.md).
+
 ## 0.1.1
 
 Memory, and a Mathlib result.
