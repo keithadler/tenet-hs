@@ -1,6 +1,8 @@
 # Changelog
 
-## Since 0.1.1
+## 0.1.2
+
+A robustness fix.
 
 - A declaration whose reduction nests deeply enough to exhaust the stack is now reported as undecided
   (`unsupported: expression too deep…`, exit 4 if nothing else failed) and the run carries on. Before, GHC's
