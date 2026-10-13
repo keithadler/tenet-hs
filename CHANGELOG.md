@@ -2,6 +2,12 @@
 
 ## Since 0.1.1
 
+- A declaration whose reduction nests deeply enough to exhaust the stack is now reported as undecided
+  (`unsupported: expression too deep…`, exit 4 if nothing else failed) and the run carries on. Before, GHC's
+  `StackOverflow` was uncaught and ended the whole run with exit 2, which reads as a malformed export. Found by giving
+  every theorem in a Mathlib-sized export another theorem's proof: `ISize.toInt_ofNat_of_lt._proof_1_2` sent
+  reduction away. Tenet reports the same declaration as a failure, "expression too deep".
+
 The Lean Kernel Arena has run tenet-hs on all 233 of its tests: 207 correct and 26 "either", with no wrong answer,
 decline, error or timeout, including the whole of `mathlib` (accepted in 2746 s, 12.3 GB peak), `cslib`, `cedar`,
 `con-leche` and `navier-stokes-euler`. It is among the slowest kernels that accept `mathlib`. See
