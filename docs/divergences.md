@@ -89,7 +89,10 @@ speed.
 `--max-unfolds N` (default 100,000,000) bounds the definition unfoldings per checker. The theory has no notion
 of running out of work; an external checker needs one, because `unsafe def f : Nat := f` would otherwise make
 normalization spin forever. Exceeding it rejects the declaration with a deterministic-timeout message. Stack
-depth is bounded by the runtime (`-K2g`).
+depth is bounded by the runtime (`-K2g`). A declaration that exhausts the stack is reported as undecided
+(`unsupported: expression too deep…`, so it counts as a decline and not a rejection) and the rest of the export is
+still checked. Tenet reports the same declaration as a failure. Before 0.1.2 the overflow was uncaught and ended the
+whole run with exit code 2.
 
 ### The string constructor is read from the environment
 

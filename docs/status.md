@@ -12,6 +12,7 @@ less time. Every acceptance number here sits next to a rejection number for that
 | **A Mathlib slice**: the import closure of `Mathlib.Algebra.Ring.Basic` (572 MB) | 128,265 declarations, **0 failed**, 68 s, 1.5 GB peak | `tenet-hs check slice.ndjson --summary` |
 | **A broader Mathlib slice**: 19 areas (analysis, number theory, linear algebra, combinatorics, measure theory, algebraic geometry, category theory, Galois theory, manifolds, polynomial rings and more) with every dependency (2.55 GB) | 405,144 declarations, **0 failed**, 463 s, 4.2 GB peak | `tenet-hs check slice.ndjson --summary +RTS -xn` |
 | `Init.Core`, `Init.Prelude` | 0 failed, under a second each | same |
+| **A third-party library**: [Reachability](https://github.com/Arrow7000/reachability) v0.1.2 (Lean 4.34.1) with its Mathlib closure (762 MB) | 177,923 declarations, **0 failed**, 87 s, 1.9 GB peak. Tenet and tenet-jvm accept it too; its 83 theorems use only `propext`, `Classical.choice` and `Quot.sound` | `tenet-hs check reach.ndjson --summary` |
 | `Nat.add_succ`, format 3.1 and 3.0 | accepted | `cabal test` |
 
 Every inductive in `Init`, nested and mutual ones included, had its constructors and recursors **derived by the
@@ -26,10 +27,19 @@ that the exporter's recursors, which a malicious file could get wrong, are never
 | `Init` with every theorem given the previous theorem's proof | **41,378 rejected**, the identical set Tenet rejects | `tools/swap-proofs.py`, then `tenet-hs check … --quiet --max-unfolds 3000000` |
 | The 19-area Mathlib slice, same mutation (279,094 theorems given another's proof) | **275,042 rejected**, the identical set Tenet rejects; 130,102 still check | same |
 | `Init.Core`, same mutation | 637 of 650 rejected, the identical 637 Tenet rejects | same |
+| Reachability's own 71 theorems, 70 given another theorem's proof | **70 of 70 rejected**, the identical 70 Tenet rejects; tenet-jvm rejects it too | `tools/swap-proofs.py` limited to the library's declarations |
+| The whole Reachability export (97,159 theorems across the Mathlib closure given another's proof) | 95,287 not accepted after 6,141 s, and the run finishes. In 0.1.1 it died with a stack overflow at one declaration (see below) | `tools/swap-proofs.py`, then `tenet-hs check … --quiet` |
 
 The survivors of the swap are not failures. They were handed a proof of a definitionally equal statement:
 `eq_comm` given a proof of the same statement, `Nat.lt_irrefl` given a proof of `¬ n + 1 ≤ n`. Tenet accepts the
 same ones, which is the stronger check than inspecting them.
+
+**A crash found by the whole-closure mutation, fixed in 0.1.2.** With every theorem in that export given another's
+proof, reduction of `ISize.toInt_ofNat_of_lt._proof_1_2` ran away until GHC raised `StackOverflow`. 0.1.1 did not catch
+it, so the whole run ended with exit code 2, which reads as a malformed export. 0.1.2 catches it per declaration,
+restores the environment, reports the declaration as undecided and carries on. It takes about 440 s to give up,
+against 49 s for Tenet, which reports the same declaration as a failure ("expression too deep"). The figure of
+95,287 counts rejected and declined declarations together; it was not split.
 
 ## Differential testing against Tenet
 
