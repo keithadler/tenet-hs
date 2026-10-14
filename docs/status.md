@@ -27,7 +27,7 @@ that the exporter's recursors, which a malicious file could get wrong, are never
 | `Init` with every theorem given the previous theorem's proof | **41,378 rejected**, the identical set Tenet rejects | `tools/swap-proofs.py`, then `tenet-hs check … --quiet --max-unfolds 3000000` |
 | The 19-area Mathlib slice, same mutation (279,094 theorems given another's proof) | **275,042 rejected**, the identical set Tenet rejects; 130,102 still check | same |
 | `Init.Core`, same mutation | 637 of 650 rejected, the identical 637 Tenet rejects | same |
-| Reachability's own 71 theorems, 70 given another theorem's proof | **70 of 70 rejected**, the identical 70 Tenet rejects; tenet-jvm rejects it too | `tools/swap-proofs.py` limited to the library's declarations |
+| Reachability's own 71 theorems, 70 given another theorem's proof | **70 of 70 rejected**, the identical 70 Tenet rejects; tenet-jvm rejects it too | a variant of `tools/swap-proofs.py` that swaps only the library's own theorems (a one-off script, not committed), then `tenet-hs check … --quiet` |
 | The whole Reachability export (97,159 theorems across the Mathlib closure given another's proof) | 95,287 not accepted after 6,141 s, and the run finishes. In 0.1.1 it died with a stack overflow at one declaration (see below) | `tools/swap-proofs.py`, then `tenet-hs check … --quiet` |
 
 The survivors of the swap are not failures. They were handed a proof of a definitionally equal statement:
