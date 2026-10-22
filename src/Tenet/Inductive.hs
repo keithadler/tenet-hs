@@ -103,8 +103,25 @@ data RecInfo = RecInfo { riC :: Expr, riIndices :: [Expr], riMajor :: Expr }
 withTc :: IC -> IO TC
 withTc ic = newTCWith (icEnv ic) (tcLctx (icTc ic)) (if icUnsafe ic then Unsafe else Safe) False True
 
+-- | Strip @optParam@, @autoParam@, @outParam@ and @semiOutParam@ from a binder type, but only when the
+-- result is definitionally equal to what was written. Lean's kernel strips by name and assumes the official
+-- prelude, so a file that declares its own @autoParam@ can make a binder look like a proof and give a
+-- @Prop@ inductive large elimination (leanbugs lean-0026, lean4#15704, closed upstream as outside the
+-- kernel's threat model). One 'isDefEq' per annotated binder; honest definitions are unaffected.
+consumeAnnotations :: IC -> Expr -> IO Expr
+consumeAnnotations ic t = do
+  let r = consumeTypeAnnotations t
+  if r == t
+    then pure t
+    else do
+      tc <- withTc ic
+      ok <- isDefEq tc t r
+      pure (if ok then r else t)
+
 mkLocal :: IC -> Name -> Expr -> BinderInfo -> IO Expr
-mkLocal ic n t bi = mkLocalDecl (icTc ic) n (consumeTypeAnnotations t) bi
+mkLocal ic n t bi = do
+  t' <- consumeAnnotations ic t
+  mkLocalDecl (icTc ic) n t' bi
 
 localForPi :: IC -> Expr -> IO Expr
 localForPi ic (Pi n bi d _) = mkLocal ic n d bi

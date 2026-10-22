@@ -93,7 +93,11 @@ main = do
         path = fixtures </> "invalid" </> file
     r <- checkFile defaultCheckOptions { coSilent = True } path
     test (file ++ " parses to the end") (rFormatError r == Nothing)
-    test (file ++ " rejects exactly " ++ rejects) (map (showName . fName) (rFailures r) == [rejects])
+    let cascade = case fieldMaybe "cascade" c of
+          Just (JArr xs) -> [T.unpack s' | JStr s' <- xs]
+          _ -> []
+    test (file ++ " rejects exactly " ++ rejects ++ concatMap (", and " ++) cascade)
+      (sort (map (showName . fName) (rFailures r)) == sort (rejects : cascade))
     case defenseOff of
       Nothing -> pure ()
       Just d -> do
