@@ -21,7 +21,7 @@ import Tenet.TypeChecker
 addDecl :: Env -> Declaration -> IO ()
 addDecl env d = do
   snap <- snapshotEnv env
-  r <- try (addCoreDecl env d)
+  r <- try (addCoreDecl env d `catch` outOfStack)
   case r of
     Right () -> pure ()
     Left ex -> do
@@ -33,6 +33,14 @@ addDecl env d = do
             Right () -> pure ()
             Left ex2 -> restoreEnv env snap >> throwIO (ex2 :: KernelError)
         _ -> throwIO ex
+
+-- | A term nested deeply enough to exhaust the stack makes GHC raise 'StackOverflow', which would otherwise end the
+-- whole run with an uncaught exception. It is reported like any other undecided declaration: the checker neither
+-- accepts it nor claims it is wrong, and the environment is restored, so the rest of the export is still checked.
+outOfStack :: AsyncException -> IO a
+outOfStack StackOverflow =
+  throwIO (Unsupported "expression too deep: ran out of stack while reducing or traversing a term")
+outOfStack e = throwIO e
 
 -- | The namespace nested-inductive elimination generates its auxiliary types into. Lean reserves it against
 -- ordinary declarations; the kernel's own auxiliaries are installed with 'addCore', so reserving it costs a
