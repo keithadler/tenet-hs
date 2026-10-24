@@ -16,7 +16,7 @@ the second list is short on purpose and every entry in it is a gap, not a choice
 | 1 | An accelerated primitive is checked before it is trusted | **Threat model** |
 | 2 | A literal's type is checked against the environment | **Threat model** |
 | 3 | The `_nested` namespace is reserved | **Threat model** |
-| 4 | `Lean.reduceBool` and `Lean.reduceNat` are declined | **Threat model** |
+| 4 | `Lean.reduceBool` and `Lean.reduceNat` are declined for exports from Lean 4.34 and earlier | **Threat model** |
 | 5 | Failure caching, then a faithful re-check | **Optimization, observationally neutral** |
 | 6 | A bound on work | **Resource** |
 | 7 | The string constructor is read from the environment | **Compatibility** |
@@ -67,6 +67,11 @@ is about to derive. The kernel's own auxiliaries are installed with `addCore`, s
 nothing.
 
 ### `Lean.reduceBool` and `Lean.reduceNat` are declined
+
+**From Lean 4.35 this is no longer a divergence.** Lean 4.35 removed in-kernel native reduction (`reduce_native` is gone from its
+`type_checker.cpp` from 4.35.0-rc1), so for an export whose metadata names Lean 4.35 or later these two constants are ordinary and
+a proof that needs them is rejected as a type mismatch, as in Lean. The rest of this section is about 4.34 and earlier, and about
+an export whose Lean version is missing, unparsable or a nightly, where the checker keeps declining.
 
 **Where:** `reduceNative`; the exit code is in `app/Main.hs`.
 

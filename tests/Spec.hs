@@ -10,10 +10,12 @@ import qualified Data.ByteString as B
 import Data.IORef
 import Data.List (sort)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import System.Directory (getTemporaryDirectory, listDirectory, removeFile)
 import System.Exit
 import System.FilePath ((</>), takeExtension)
 import Tenet.Check
+import Tenet.Env (kernelHasNoNativeReduction)
 import Tenet.Expr
 import Tenet.ExprOps
 import Tenet.Json
@@ -79,6 +81,21 @@ main = do
     test (what ++ " is a format error, not OK") (rFormatError r /= Nothing)
   removeFile emptyPath
   removeFile noMetaPath
+
+  -- Lean 4.35 removed in-kernel native reduction: declined for 4.34 and earlier (or an unknown Lean), rejected after
+  forM_ [ ("4.35.0", True), ("v4.35.0", True), ("4.35.0-rc1", True), ("4.35.0-rc4", True), ("4.36.0-rc1", True), ("5.0.0", True)
+        , ("4.34.1", False), ("4.34.0", False), ("4.33.1", False), ("4.12.0", False), ("4.36.0-nightly-2026-10-01", False)
+        , ("n/a", False), ("", False), ("garbage", False) ] $ \(v, removed) ->
+    test ("Lean " ++ show v ++ (if removed then " has no native reduction" else " is declined or unknown")) (kernelHasNoNativeReduction v == removed)
+  compiledCode <- B.readFile (fixtures </> "invalid" </> "compiled-code.ndjson")
+  forM_ [("n/a", True), ("4.34.1", True), ("4.33.1", True), ("4.35.0", False), ("4.35.0-rc4", False), ("4.36.0-rc1", False)] $ \(v, declined) -> do
+    let rewritten = T.encodeUtf8 (T.replace "\"version\":\"n/a\"" (T.pack ("\"version\":\"" ++ v ++ "\"")) (T.decodeUtf8 compiledCode))
+        path = tmp </> "tenet-hs-native.ndjson"
+    B.writeFile path rewritten
+    r <- checkFile defaultCheckOptions { coSilent = True } path
+    removeFile path
+    test ("compiled-code.ndjson claiming Lean " ++ v ++ " fails exactly 'bad'") (map (showName . fName) (rFailures r) == ["bad"])
+    test ("compiled-code.ndjson claiming Lean " ++ v ++ (if declined then " is declined" else " is rejected")) (map fDeclined (rFailures r) == [declined])
 
   -- the negative corpus
   manifestBytes <- B.readFile (fixtures </> "invalid" </> "manifest.json")

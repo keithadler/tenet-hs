@@ -44,7 +44,7 @@ A loose bound variable reaching the checker is an error: terms are opened with f
 | Quotient | `Quot.lift f h (Quot.mk r a) ↝ f a` and `Quot.ind h (Quot.mk r a) ↝ h a` | `quotTryReduceRec` |
 | Nat literals | `Nat.add`, `sub`, `mul`, `div`, `mod`, `gcd`, `pow`, `land`, `lor`, `xor`, `shiftLeft`, `shiftRight` on literals computed directly; `Nat.succ` of a literal; `Nat.beq` and `Nat.ble` to a `Bool` | `reduceNat` |
 | Literal to constructor | a `Nat` literal in a major premise becomes `Nat.zero` or `Nat.succ n`; a string literal becomes a list of characters | `natLitToConstructor`, `stringLitToConstructor` |
-| Native | `Lean.reduceBool` and `Lean.reduceNat` need compiled code; the checker declines | `reduceNative` |
+| Native | `Lean.reduceBool` and `Lean.reduceNat` need compiled code; for exports from Lean 4.34 and earlier (or a Lean it cannot identify) the checker declines; for 4.35 and later the rule does not exist in Lean's kernel and the terms are ordinary constants, so a proof that needs them is rejected | `reduceNative` |
 
 Each literal shortcut is taken only if the constant it is named after has been checked against its defining
 equations; see [divergences](divergences.md#an-accelerated-primitive-is-checked-before-it-is-trusted).

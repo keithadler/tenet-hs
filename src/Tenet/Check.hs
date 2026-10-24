@@ -95,7 +95,10 @@ checkStream opts nextLine = do
                 parsed <- parseLine tbl l
                 case parsed of
                   Left e -> writeIORef fmtErr (Just ("line " ++ show (lineNo + 1) ++ ": " ++ e))
-                  Right (LMeta m) -> writeIORef meta (Just m) >> loop (lineNo + 1) tbl
+                  Right (LMeta m) -> do
+                    writeIORef meta (Just m)
+                    writeIORef (envNativeRemoved env) (kernelHasNoNativeReduction (mLean m))
+                    loop (lineNo + 1) tbl
                   Right LTable -> loop (lineNo + 1) tbl
                   Right (LDecl d) -> do
                     stop <- if selected d then checkOne d else installUnchecked env d >> pure False

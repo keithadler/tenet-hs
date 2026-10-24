@@ -13,13 +13,16 @@ module Tenet.Env
   , Declaration (..), DefDecl (..), IndDecl (..), IndType (..), CtorDecl (..), declNames
   , Options (..), defaultOptions
   , Env (..), EnvData (..), Primitive (..)
+  , kernelHasNoNativeReduction
   , newEnv, childEnv, findConst, getConst, containsConst, addCore, quotInitialized, markQuotInitialized
   , snapshotEnv, restoreEnv, ownConstants, envSize, checkName, checkDuplicatedUnivParams, stringLiteralConstructor
   ) where
 
 import Control.Exception
 import Control.Monad (forM_, when)
+import Data.Char (isDigit, isSpace, toLower)
 import Data.IORef
+import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import Tenet.Expr
 import Tenet.Name
@@ -193,6 +196,23 @@ data Options = Options
 defaultOptions :: Options
 defaultOptions = Options { optPrimitiveCheck = True, optMaxUnfolds = 100000000, optCompareInductive = True }
 
+-- | Whether Lean's own kernel of this version does not evaluate @Lean.reduceBool@ and @Lean.reduceNat@. Lean 4.34 and
+-- earlier did (running compiled code); it was removed before 4.35.0-rc1, so from 4.35 on a term such as
+-- @Lean.reduceBool b@ is an ordinary stuck constant application and a proof that needs it is a type mismatch. An
+-- unparsable version, or a nightly build, answers 'False': the checker then keeps declining those terms instead of
+-- guessing that a kernel it cannot identify rejects them.
+kernelHasNoNativeReduction :: String -> Bool
+kernelHasNoNativeReduction v0 =
+  let v = dropWhile (== 'v') (dropWhile isSpace v0)
+      (a, r1) = span isDigit v
+      (b, r2) = span isDigit (drop 1 r1)
+      (c, r3) = span isDigit (drop 1 r2)
+      shaped = not (null a) && not (null b) && not (null c) && take 1 r1 == "." && take 1 r2 == "." && (null r3 || take 1 r3 == "-")
+      nightly = "nightly" `L.isPrefixOf` map toLower (drop 1 r3)
+      major = read a :: Integer
+      minor = read b :: Integer
+  in shaped && not nightly && (major > 4 || (major == 4 && minor >= 35))
+
 data Primitive
   = PNatLiteralType | PStringLiteralType
   | PNatSucc | PNatPred | PNatAdd | PNatSub | PNatMul | PNatPow | PNatBeq | PNatBle
@@ -209,13 +229,16 @@ data Env = Env
   { envData :: IORef EnvData
   , envPrims :: IORef (M.Map Primitive Bool)
   , envOpts :: Options
+  , envNativeRemoved :: IORef Bool
+    -- ^ the Lean that wrote the export has no in-kernel native reduction (see 'kernelHasNoNativeReduction')
   }
 
 newEnv :: Options -> IO Env
 newEnv opts = do
   d <- newIORef (EnvData M.empty [] False)
   p <- newIORef M.empty
-  pure (Env d p opts)
+  n <- newIORef False
+  pure (Env d p opts n)
 
 -- | A snapshot that new constants can be layered onto without touching the parent. The listed constants are
 -- hidden, so a declaration the parent already has can be re-derived and checked as if it were new.
@@ -226,7 +249,8 @@ childEnv env hidden = do
       q' = q && not (any (`elem` hidden) quotNames)
   d <- newIORef (EnvData cs' [] q')
   p <- newIORef M.empty
-  pure (Env d p (envOpts env))
+  n <- readIORef (envNativeRemoved env) >>= newIORef
+  pure (Env d p (envOpts env) n)
   where
     quotNames = [nameOf ["Quot"]]
 

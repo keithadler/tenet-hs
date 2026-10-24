@@ -774,8 +774,13 @@ unfoldDefinition tc e = case e of
     pure (fmap (\f -> mkRevApp f (getAppRevArgs e)) mf)
   _ -> unfoldDefinitionCore tc e
 
-reduceNative :: Expr -> IO (Maybe Expr)
-reduceNative = \case
+reduceNative :: TC -> Expr -> IO (Maybe Expr)
+reduceNative tc e0 = do
+  removed <- readIORef (envNativeRemoved (tcEnv tc))
+  if removed then pure Nothing else reduceNativeTerm e0
+
+reduceNativeTerm :: Expr -> IO (Maybe Expr)
+reduceNativeTerm = \case
   App (Const f _) (Const _ _) | f == nReduceBool || f == nReduceNat ->
     fire NativeReduce >> unsupported ("'" ++ showName f ++ "' requires running compiled code, which an external checker cannot trust; the declaration cannot be checked")
   _ -> pure Nothing
@@ -909,7 +914,7 @@ whnf tc e = case e of
         Nothing -> loop e
     loop t = do
       t1 <- whnfCore tc t
-      mv <- reduceNative t1
+      mv <- reduceNative tc t1
       case mv of
         Just v -> done v
         Nothing -> do
@@ -1172,11 +1177,11 @@ lazyDeltaReduction tc = loop
             Just LTrue -> pure DRTrue
             Just LFalse -> pure DRFalse
             _ -> do
-              tnat <- reduceNative tn
+              tnat <- reduceNative tc tn
               case tnat of
                 Just v -> fin <$> isDefEqCore tc v sn
                 Nothing -> do
-                  snat <- reduceNative sn
+                  snat <- reduceNative tc sn
                   case snat of
                     Just v -> fin <$> isDefEqCore tc tn v
                     Nothing -> do

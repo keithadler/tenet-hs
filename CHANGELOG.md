@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+Native reduction is declined or rejected according to the Lean that wrote the export. Lean 4.35 removed in-kernel native
+reduction (`reduce_native` is gone from its `type_checker.cpp` from 4.35.0-rc1; `Lean.ofReduceBool` no longer exists, and
+`native_decide` already produced a per-proof axiom on 4.34). For an export from Lean 4.35 or later, `Lean.reduceBool` and
+`Lean.reduceNat` are now ordinary constants, so a file that leans on them is rejected as a type mismatch (exit 1), as in Lean.
+For 4.34 and earlier, and for an export whose Lean version is missing, unparsable or a nightly, tenet-hs still declines
+(exit 4). Real 4.35 exports do not contain these terms, so no verdict on a real library changes. The spec has 26 new
+checks; ignoring the new flag makes three of them fail.
+
 ## 0.1.3
 
 No code change. Checked against Lean 4.35.0: `Init` exported from it has 57,919 declarations, 0 failed, the same count
