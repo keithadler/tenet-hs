@@ -11,6 +11,7 @@ less time. Every acceptance number here sits next to a rejection number for that
 | `Init`, Lean 4.35.0-rc4 (346 MB) | 57,919 declarations, **0 failed**, 48 s, 0.84 GB peak | `tenet-hs check Init.ndjson --summary` |
 | **A Mathlib slice**: the import closure of `Mathlib.Algebra.Ring.Basic` (572 MB) | 128,265 declarations, **0 failed**, 68 s, 1.5 GB peak | `tenet-hs check slice.ndjson --summary` |
 | **A broader Mathlib slice**: 19 areas (analysis, number theory, linear algebra, combinatorics, measure theory, algebraic geometry, category theory, Galois theory, manifolds, polynomial rings and more) with every dependency (2.55 GB) | 405,144 declarations, **0 failed**, 463 s, 4.2 GB peak | `tenet-hs check slice.ndjson --summary +RTS -xn` |
+| `Init`, Lean 4.35.0 (released 12 October; re-run 23 October) | 57,919 declarations, **0 failed**, 59 s | `tenet-hs check Init.ndjson --summary` |
 | `Init.Core`, `Init.Prelude` | 0 failed, under a second each | same |
 | **A third-party library**: [Reachability](https://github.com/Arrow7000/reachability) v0.1.2 (Lean 4.34.1) with its Mathlib closure (762 MB) | 177,923 declarations, **0 failed**, 87 s, 1.9 GB peak. Tenet and tenet-jvm accept it too; its 83 theorems use only `propext`, `Classical.choice` and `Quot.sound` | `tenet-hs check reach.ndjson --summary` |
 | `Nat.add_succ`, format 3.1 and 3.0 | accepted | `cabal test` |
