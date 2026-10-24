@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               tenet-hs
-version:            0.1.2
+version:            0.1.3
 synopsis:           An independent Lean 4 kernel in Haskell, and a checker for Lean exports
 description:        Re-checks lean4export NDJSON files from scratch. Written from the type theory and the
                     reference kernel's behavior; shares no code with Lean.

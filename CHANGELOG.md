@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
 No code change. Checked against Lean 4.35.0: `Init` exported from it has 57,919 declarations, 0 failed, the same count
 Tenet and the reference kernel report. Lean 4.35.0 removed native reduction from its kernel, so `Lean.reduceBool` and
