@@ -12,6 +12,11 @@ less time. Every acceptance number here sits next to a rejection number for that
 | **A Mathlib slice**: the import closure of `Mathlib.Algebra.Ring.Basic` (572 MB) | 128,265 declarations, **0 failed**, 68 s, 1.5 GB peak | `tenet-hs check slice.ndjson --summary` |
 | **A broader Mathlib slice**: 19 areas (analysis, number theory, linear algebra, combinatorics, measure theory, algebraic geometry, category theory, Galois theory, manifolds, polynomial rings and more) with every dependency (2.55 GB) | 405,144 declarations, **0 failed**, 463 s, 4.2 GB peak | `tenet-hs check slice.ndjson --summary +RTS -xn` |
 | `Init`, Lean 4.35.0 (released 12 October; re-run 23 October) | 57,919 declarations, **0 failed**, 59 s | `tenet-hs check Init.ndjson --summary` |
+| `Init`, Lean 4.36.0 (19 November) | 58,547 declarations, **0 failed**, 78 s, 0.79 GB peak | `tenet-hs check Init.ndjson` |
+| `Init`, Lean 4.37.0-rc1 (19 November), checked with the 4.37 rules | 61,002 declarations, **0 failed**, 87 s, 0.85 GB peak | same |
+| `Lean` (the whole compiler library, with `Init` and `Std`), Lean 4.36.0 | 167,602 declarations, **0 failed**, 1,856 s, 0.84 GB peak (same load) | same |
+| `Lean`, Lean 4.37.0-rc1 | 175,734 declarations, **0 failed**, 1,791 s, 1.38 GB peak (same load) | same |
+| `eta437.ndjson`, `acc436.ndjson` | each accepted under the Lean that wrote it; with the metadata rewritten to the other version, exactly the declarations Lean's own kernel of that version rejects fail (2 and 1) | `cabal test` |
 | `Init.Core`, `Init.Prelude` | 0 failed, under a second each | same |
 | **A third-party library**: [Reachability](https://github.com/Arrow7000/reachability) v0.1.2 (Lean 4.34.1) with its Mathlib closure (762 MB) | 177,923 declarations, **0 failed**, 87 s, 1.9 GB peak. Tenet and tenet-jvm accept it too; its 83 theorems use only `propext`, `Classical.choice` and `Quot.sound` | `tenet-hs check reach.ndjson --summary` |
 | `Nat.add_succ`, format 3.1 and 3.0 | accepted | `cabal test` |
@@ -24,8 +29,9 @@ that the exporter's recursors, which a malicious file could get wrong, are never
 
 | Input | Result | Command |
 | --- | --- | --- |
-| The negative corpus, 9 files | **9 of 9 rejected**, each at the one declaration its manifest entry names; each defended case accepted in full with its defense off | `cabal test` |
+| The negative corpus, 11 files | **11 of 11 rejected**, each at the one declaration its manifest entry names; each defended case accepted in full with its defense off | `cabal test` |
 | `Init` with every theorem given the previous theorem's proof | **41,378 rejected**, the identical set Tenet rejects | `tools/swap-proofs.py`, then `tenet-hs check … --quiet --max-unfolds 3000000` |
+| `Init` from Lean 4.37.0-rc1, same mutation (44,235 of 44,311 theorems given another's proof), checked with the 4.37 rules | **43,711 rejected**, the identical set Tenet rejects (Tenet with the same rules ported, `TENET_MAX_UNFOLDS=3000000`); 17,291 still check; 4,416 s, 2.8 GB peak under load | `tools/swap-proofs.py`, then `tenet-hs check … --max-unfolds 3000000` |
 | The 19-area Mathlib slice, same mutation (279,094 theorems given another's proof) | **275,042 rejected**, the identical set Tenet rejects; 130,102 still check | same |
 | `Init.Core`, same mutation | 637 of 650 rejected, the identical 637 Tenet rejects | same |
 | Reachability's own 71 theorems, 70 given another theorem's proof | **70 of 70 rejected**, the identical 70 Tenet rejects; tenet-jvm rejects it too | a variant of `tools/swap-proofs.py` that swaps only the library's own theorems (a one-off script, not committed), then `tenet-hs check … --quiet` |
@@ -83,6 +89,16 @@ It is correct and it is slow. On `mathlib` it is 14th of the 16 kernels that acc
 of several others. It also took 18.0 trillion instructions, the most of any kernel on the board. Its history on
 the first run of the published suite was 192 of 196: two reader gaps (sparse and out-of-order table indices) and two
 slow tests, since fixed.
+
+**The published suite as of 19 November 2026** (225 files, 90 must-reject and 135 must-accept; almost all exported
+by Lean 4.36.0, so the 4.37 rules are not exercised by it), run locally with `tools/arena.sh` on a machine heavily
+loaded by other jobs: 218 correct within the script's 300 s limit, 7 over it and no wrong verdict. Re-run one at a
+time with a longer limit, 6 of the 7 gave the right verdict (`proj-applied-struct` 107 s, `short-circuit-and` 143 s,
+`ite-taken-branch` 381 s, `magma-list-pair-n21` 395 s, `proj-applied-struct-arg-bad` 466 s, `magma-list-deep-n36`
+935 s). The seventh, `bad/perf/loop-unfolded-once-bad`, added to the suite on 2026-11-20, was rejected correctly
+only after 2,399 s; the unmodified 0.1.3 build had not finished it after 2,400 s, and Tenet rejects it in 32 s. That
+test is a speed problem that predates the 4.37 work, and its arena timeout is not known here. These times are not
+comparable with the table below, which was measured on an idle machine.
 
 ## Speed and memory
 

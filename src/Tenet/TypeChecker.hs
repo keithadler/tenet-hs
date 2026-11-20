@@ -591,15 +591,27 @@ toCtorWhenK tc rec e whnf' = do
           _ -> pure Nothing
       _ -> pure Nothing
 
-toCtorWhenStructure :: TC -> Name -> Expr -> (Expr -> IO Expr) -> IO Expr
-toCtorWhenStructure tc inductName e whnf' = do
+toCtorWhenStructure :: TC -> ConstantInfo -> Expr -> (Expr -> IO Expr) -> IO Expr
+toCtorWhenStructure tc rec e whnf' = do
+  inductName <- recMajorInduct rec
   s <- isNonRecStructure (tcEnv tc) inductName
   c <- isConstructorApp (tcEnv tc) e
   if not s || c then pure e else do
     eType <- infer tc e >>= whnf'
     if not (isConstOf (getAppFn eType) inductName) then pure e else do
-      p <- isProp tc eType
-      if p then pure e else expandEtaStruct (tcEnv tc) eType e
+      eta437 <- readIORef (envEta437 (tcEnv tc))
+      -- Lean 4.37 (lean4#15371): no eta for a proposition that is not a subsingleton, and the test for that is
+      -- whether the recursor eliminates into every sort, read off as one more universe parameter than the first
+      -- inductive type of its block has. The major's own type would not do: an auxiliary recursor of a nested
+      -- inductive has a major of another type. `get` on purpose, as in the reference.
+      skip <- if eta437
+        then case ciKind rec of
+          KRec { kAll = (first : _) } -> do
+            fi <- getConst (tcEnv tc) first
+            pure (length (ciLParams rec) == length (ciLParams fi))
+          _ -> kerr "recursor without an inductive type"
+        else isProp tc eType
+      if skip then pure e else expandEtaStruct (tcEnv tc) eType e
 
 -- | Iota reduction: reduce a recursor applied to a constructor application.
 tryReduceRec :: TC -> Expr -> Name -> [Level] -> (Expr -> IO Expr) -> IO (Maybe Expr)
@@ -612,13 +624,15 @@ tryReduceRec tc e recName recLevels whnf' = do
       if majorIdx >= length recArgs then pure Nothing else do
         let major0 = recArgs !! majorIdx
         major1 <- if isK then toCtorWhenK tc rec major0 whnf' else pure major0
-        major2 <- whnf' major1
+        -- Lean 4.37 (lean4#15371) leaves a proof alone: reducing one can fail to terminate, and whatever a
+        -- recursor needs from it is supplied by rule K above or by eta below.
+        eta437 <- readIORef (envEta437 (tcEnv tc))
+        isProof <- if eta437 then infer tc major1 >>= isProp tc else pure False
+        major2 <- if isProof then pure major1 else whnf' major1
         major3 <- case major2 of
           Lit (NatLit n) -> pure (natLitToConstructor n)
           Lit (StrLit s) -> fire StringLitToCtor >> stringLitToConstructor (tcEnv tc) s >>= whnf'
-          _ -> do
-            mi <- recMajorInduct rec
-            toCtorWhenStructure tc mi major2 whnf'
+          _ -> toCtorWhenStructure tc rec major2 whnf'
         case recRuleFor rec major3 of
           Nothing -> pure Nothing
           Just rule -> do
@@ -1029,17 +1043,31 @@ tryEtaStructCore tc t s = case getAppFn s of
     -- `get`, as in Lean: an unknown constant is a rejection, not a quiet "no eta"
     fi <- getConst (tcEnv tc) fn
     case ciKind fi of
-      KCtor { kInduct = ind, kNumParams = np, kNumFields = nf }
-        | getAppNumArgs s == np + nf -> do
-            isStruct <- isNonRecStructure (tcEnv tc) ind
-            if not isStruct then pure False else do
-              tt <- infer tc t
-              st <- infer tc s
-              ok <- isDefEq tc tt st
-              if not ok then pure False else
-                allM (\(i, a) -> isDefEq tc (Proj ind (i - np) t) a) (drop np (zip [0 ..] (getAppArgs s)))
+      KCtor { kInduct = ind, kNumParams = np, kNumFields = nf } -> do
+        eta437 <- readIORef (envEta437 (tcEnv tc))
+        let given = getAppNumArgs s
+            numCtorArgs = np + nf
+        if (if eta437 then given > numCtorArgs else given /= numCtorArgs) then pure False else do
+          isStruct <- isNonRecStructure (tcEnv tc) ind
+          if not isStruct then pure False else do
+            tt <- infer tc t
+            st <- infer tc s
+            ok <- isDefEq tc tt st
+            if not ok then pure False else do
+              -- Lean 4.37 (lean4#15373): a partially applied constructor is a function, so compare both sides
+              -- applied to fresh variables for the missing fields. The type of a constructor application is a Pi
+              -- telescope as written, so no normalization is needed to walk it.
+              (t', s') <- if given < numCtorArgs then applyMissing t s st else pure (t, s)
+              if getAppNumArgs s' /= numCtorArgs then pure False else
+                allM (\(i, a) -> isDefEq tc (Proj ind (i - np) t') a) (drop np (zip [0 ..] (getAppArgs s')))
       _ -> pure False
   _ -> pure False
+  where
+    applyMissing t1 s1 ty = case ty of
+      Pi n bi d b -> do
+        x <- mkLocalDecl tc n d bi
+        applyMissing (App t1 x) (App s1 x) (instantiate1 b x)
+      _ -> pure (t1, s1)
 
 allM :: Monad m => (a -> m Bool) -> [a] -> m Bool
 allM _ [] = pure True
@@ -1258,6 +1286,16 @@ isDefEqCore tc t s = do
           then (\w -> isConstOf w nBoolTrue) <$> whnf tc t
           else pure False
       if reflected then fire DefEqReflect >> pure True else do
+        -- Lean 4.37 (lean4#15103) asks about proof irrelevance before normalizing either side, so that a proof is
+        -- never reduced here; earlier kernels ask after.
+        irrelFirst <- readIORef (envEta437 (tcEnv tc))
+        rp <- if irrelFirst then isDefEqProofIrrel tc t s else pure LUndef
+        case rp of
+          LTrue -> fire DefEqProofIrrel >> pure True
+          LFalse -> fire DefEqProofIrrel >> pure False
+          LUndef -> afterIrrel irrelFirst
+  where
+    afterIrrel irrelFirst = do
         tn <- whnfCoreX tc False True t
         sn <- whnfCoreX tc False True s
         r1 <- if not (tn == t) || not (sn == s) then quickIsDefEq tc tn sn else pure LUndef
@@ -1265,7 +1303,7 @@ isDefEqCore tc t s = do
           LTrue -> pure True
           LFalse -> pure False
           LUndef -> do
-            r2 <- isDefEqProofIrrel tc tn sn
+            r2 <- if irrelFirst then pure LUndef else isDefEqProofIrrel tc tn sn
             case r2 of
               LTrue -> fire DefEqProofIrrel >> pure True
               LFalse -> fire DefEqProofIrrel >> pure False
@@ -1275,7 +1313,6 @@ isDefEqCore tc t s = do
                   DRTrue -> fire DefEqLazyDelta >> pure True
                   DRFalse -> fire DefEqLazyDelta >> pure False
                   DRUndef tn' sn' -> afterDelta tn' sn'
-  where
     afterDelta tn sn
       | Const a la <- tn, Const b lb <- sn, a == b, levelsEquiv la lb = fire DefEqConst >> pure True
       | FVar a <- tn, FVar b <- sn, a == b = fire DefEqFVar >> pure True

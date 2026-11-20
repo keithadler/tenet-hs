@@ -37,9 +37,9 @@ A loose bound variable reaching the checker is an error: terms are opened with f
 | Beta | `(fun x => b) a ↝ b[x := a]` | `whnfCoreX`, `betaRev` (`Tenet.ExprOps`) |
 | Zeta | `(let x := v; b) ↝ b[x := v]`, and a let-bound free variable reduces to its value | `whnfCoreX` |
 | Delta | `c.{v̄} ↝` its value, for a definition or theorem | `whnf`, `unfoldDefinition` |
-| Iota | `I.rec … (I.ctor_i ā) ↝` the rule for `ctor_i`, applied to the parameters, motives, minors and fields | `tryReduceRec` |
+| Iota | `I.rec … (I.ctor_i ā) ↝` the rule for `ctor_i`, applied to the parameters, motives, minors and fields. The major premise is weak head normalized first; for exports from Lean 4.37 and later it is left as it is when it is a proof | `tryReduceRec` |
 | K | for an inductive proposition with one constructor and no fields, a major premise whose type is that proposition is replaced by the constructor, even when it is a variable | `toCtorWhenK` |
-| Structure eta in iota | a major premise of a structure type is expanded to the constructor applied to its projections | `toCtorWhenStructure`, `expandEtaStruct` |
+| Structure eta in iota | a major premise of a structure type is expanded to the constructor applied to its projections. Up to Lean 4.36, never for a structure in `Prop`; from 4.37, for any structure whose recursor eliminates into every sort, which includes `And` | `toCtorWhenStructure`, `expandEtaStruct` |
 | Projection | `(S.mk ā).i ↝ aᵢ` | `reduceProjCore` |
 | Quotient | `Quot.lift f h (Quot.mk r a) ↝ f a` and `Quot.ind h (Quot.mk r a) ↝ h a` | `quotTryReduceRec` |
 | Nat literals | `Nat.add`, `sub`, `mul`, `div`, `mod`, `gcd`, `pow`, `land`, `lor`, `xor`, `shiftLeft`, `shiftRight` on literals computed directly; `Nat.succ` of a literal; `Nat.beq` and `Nat.ble` to a `Bool` | `reduceNat` |
@@ -62,7 +62,7 @@ algorithm is incomplete by design (definitional equality is not transitive in th
 | 4 | Literals equal | `quickIsDefEq` |
 | 5 | A closed term against `Bool.true` is reduced fully (proofs by reflection) | `isDefEqCore` |
 | 6 | Weak head normalize both sides without delta, projections cheaply | `whnfCoreX` |
-| 7 | Proof irrelevance: two proofs of the same proposition are equal | `isDefEqProofIrrel` |
+| 7 | Proof irrelevance: two proofs of the same proposition are equal. For exports from Lean 4.37 and later this is asked before step 6, on the terms as given, so a proof is never normalized here | `isDefEqProofIrrel` |
 | 8 | Lazy delta: unfold the side with the greater reducibility height, or both; same-head applications try their arguments first | `lazyDeltaReduction`, `lazyDeltaReductionStep` |
 | 9 | Nat offsets: `n+1 ≡ m+1` reduces to `n ≡ m`, and literals count as offsets | `isDefEqOffset` |
 | 10 | Equal constants with equivalent levels; the same free variable | `isDefEqCore` |
@@ -70,7 +70,7 @@ algorithm is incomplete by design (definitional equality is not transitive in th
 | 12 | Weak head normalize again, now with full reduction of projections | `isDefEqCore` |
 | 13 | Congruence on applications | `isDefEqApp` |
 | 14 | Eta for functions: `f ≡ fun x => f x` | `tryEtaExpansion` |
-| 15 | Eta for structures: `s ≡ S.mk s.1 … s.n` | `tryEtaStruct` |
+| 15 | Eta for structures: `s ≡ S.mk s.1 … s.n`. For exports from Lean 4.37 and later the constructor may be partially applied: both sides are applied to fresh variables for the missing fields first | `tryEtaStruct` |
 | 16 | A string literal against the string constructor applied to a list | `tryStringLitExpansion` |
 | 17 | Unit-like types: any two elements of a one-constructor type with no fields are equal | `isDefEqUnitLike` |
 

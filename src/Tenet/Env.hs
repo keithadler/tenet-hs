@@ -13,7 +13,7 @@ module Tenet.Env
   , Declaration (..), DefDecl (..), IndDecl (..), IndType (..), CtorDecl (..), declNames
   , Options (..), defaultOptions
   , Env (..), EnvData (..), Primitive (..)
-  , kernelHasNoNativeReduction
+  , kernelHasNoNativeReduction, kernelHasEta437, useRulesOf
   , newEnv, childEnv, findConst, getConst, containsConst, addCore, quotInitialized, markQuotInitialized
   , snapshotEnv, restoreEnv, ownConstants, envSize, checkName, checkDuplicatedUnivParams, stringLiteralConstructor
   ) where
@@ -213,6 +213,36 @@ kernelHasNoNativeReduction v0 =
       minor = read b :: Integer
   in shaped && not nightly && (major > 4 || (major == 4 && minor >= 35))
 
+-- | Whether Lean's own kernel of this version has the definitional-equality changes that first shipped in 4.37.0-rc1
+-- (lean4#15103, #15371, #15373): proof irrelevance is tried before the first weak head normalization, a recursor's
+-- major premise is not reduced when it is a proof and is eta-expanded for a subsingleton structure such as @And@, and
+-- structure eta applies to a partially applied constructor. They landed on master on 2026-10-20, so a 4.37 nightly
+-- counts from 2026-10-21 on. An unparsable version answers 'False', which keeps the rules every earlier release has.
+kernelHasEta437 :: String -> Bool
+kernelHasEta437 v0 =
+  let v = dropWhile (== 'v') (dropWhile isSpace v0)
+      (a, r1) = span isDigit v
+      (b, r2) = span isDigit (drop 1 r1)
+      (c, r3) = span isDigit (drop 1 r2)
+      shaped = not (null a) && not (null b) && not (null c) && take 1 r1 == "." && take 1 r2 == "." && (null r3 || take 1 r3 == "-")
+      suffix = map toLower (drop 1 r3)
+      major = read a :: Integer
+      minor = read b :: Integer
+      -- "nightly-YYYY-MM-DD"; anything else that starts with "nightly" has no date to go by and answers False
+      nightlyOk = case L.stripPrefix "nightly-" suffix of
+        Just d | [y1, y2, y3, y4, '-', m1, m2, '-', d1, d2] <- take 10 d, all isDigit [y1, y2, y3, y4, m1, m2, d1, d2] ->
+          [y1, y2, y3, y4, m1, m2, d1, d2] >= "20261021"
+        _ -> False
+  in shaped && if major /= 4 || minor /= 37
+       then major > 4 || (major == 4 && minor > 37)
+       else if "nightly" `L.isPrefixOf` suffix then nightlyOk else True
+
+-- | Set every rule that depends on the Lean version from the version string an export carries.
+useRulesOf :: Env -> String -> IO ()
+useRulesOf env v = do
+  writeIORef (envNativeRemoved env) (kernelHasNoNativeReduction v)
+  writeIORef (envEta437 env) (kernelHasEta437 v)
+
 data Primitive
   = PNatLiteralType | PStringLiteralType
   | PNatSucc | PNatPred | PNatAdd | PNatSub | PNatMul | PNatPow | PNatBeq | PNatBle
@@ -231,6 +261,8 @@ data Env = Env
   , envOpts :: Options
   , envNativeRemoved :: IORef Bool
     -- ^ the Lean that wrote the export has no in-kernel native reduction (see 'kernelHasNoNativeReduction')
+  , envEta437 :: IORef Bool
+    -- ^ the Lean that wrote the export has the 4.37 definitional-equality rules (see 'kernelHasEta437')
   }
 
 newEnv :: Options -> IO Env
@@ -238,7 +270,8 @@ newEnv opts = do
   d <- newIORef (EnvData M.empty [] False)
   p <- newIORef M.empty
   n <- newIORef False
-  pure (Env d p opts n)
+  e <- newIORef False
+  pure (Env d p opts n e)
 
 -- | A snapshot that new constants can be layered onto without touching the parent. The listed constants are
 -- hidden, so a declaration the parent already has can be re-derived and checked as if it were new.
@@ -250,7 +283,8 @@ childEnv env hidden = do
   d <- newIORef (EnvData cs' [] q')
   p <- newIORef M.empty
   n <- readIORef (envNativeRemoved env) >>= newIORef
-  pure (Env d p (envOpts env) n)
+  e <- readIORef (envEta437 env) >>= newIORef
+  pure (Env d p (envOpts env) n e)
   where
     quotNames = [nameOf ["Quot"]]
 

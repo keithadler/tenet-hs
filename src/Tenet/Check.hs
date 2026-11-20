@@ -97,7 +97,7 @@ checkStream opts nextLine = do
                   Left e -> writeIORef fmtErr (Just ("line " ++ show (lineNo + 1) ++ ": " ++ e))
                   Right (LMeta m) -> do
                     writeIORef meta (Just m)
-                    writeIORef (envNativeRemoved env) (kernelHasNoNativeReduction (mLean m))
+                    useRulesOf env (mLean m)
                     loop (lineNo + 1) tbl
                   Right LTable -> loop (lineNo + 1) tbl
                   Right (LDecl d) -> do

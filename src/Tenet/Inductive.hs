@@ -35,9 +35,11 @@ addInductive :: Env -> IndDecl -> IO ()
 addInductive env d = do
   forM_ (idTypes d) $ \t -> do
     checkNoFVar (itName t) (itType t)
+    checkNoLooseBVars (itType t)
     checkNoNestedAux (itName t) (itType t)
     forM_ (itCtors t) $ \c -> do
       checkNoFVar (cdName c) (cdType c)
+      checkNoLooseBVars (cdType c)
       checkNoNestedAux (cdName c) (cdType c)
   checkUniformIndOccs d
   res <- elimNested env d
@@ -50,6 +52,14 @@ addInductive env d = do
 
 checkNoFVar :: Name -> Expr -> IO ()
 checkNoFVar n e = when (hasFVar e) $ kerr ("declaration '" ++ showN n ++ "' contains free variables")
+
+-- | A type or constructor type of an inductive declaration must be closed. Lean checks this up front since 4.37
+-- (lean4#16512); before that a loose bound variable in a constructor field could slip past, because the telescope
+-- walk instantiated it away. Refused for every Lean version: no well-formed export has one.
+checkNoLooseBVars :: Expr -> IO ()
+checkNoLooseBVars e =
+  when (hasLooseBVars e) $
+    kerr "type checker does not support loose bound variables, replace them with free variables before invoking it"
 
 checkNoNestedAux :: Name -> Expr -> IO ()
 checkNoNestedAux n e =

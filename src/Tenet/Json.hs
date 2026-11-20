@@ -146,7 +146,11 @@ field :: T.Text -> Json -> Either String Json
 field k j = maybe (Left ("missing field '" ++ T.unpack k ++ "'")) Right (fieldMaybe k j)
 
 asInt :: Json -> Either String Int
-asInt (JNum n) = Right (fromInteger n)
+asInt (JNum n)
+  -- A count or an index that does not fit is refused, never wrapped: 2^64 read as 0 would turn a projection index or
+  -- a parameter count into a different, valid-looking one (the class of lean4#16279).
+  | n >= toInteger (minBound :: Int) && n <= toInteger (maxBound :: Int) = Right (fromInteger n)
+  | otherwise = Left "integer out of range"
 asInt _ = Left "expected an integer"
 
 asString :: Json -> Either String T.Text
