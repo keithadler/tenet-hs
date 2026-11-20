@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.4
 
 Lean 4.36.0 and 4.37.0-rc1. Lean 4.36.0 changed nothing in its kernel's decisions; 4.37.0-rc1 changed three
 definitional-equality rules, and tenet-hs now follows the Lean version an export names:
