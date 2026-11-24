@@ -45,7 +45,7 @@ nothing here is evidence until it sits next to a run that *should* fail.
 | **Accepts** all of `Init` (Lean 4.35.0-rc4) | 57,919 declarations, 0 failed, 48 s on one core, 0.84 GB |
 | **Accepts** all of Mathlib on the arena's board | 5.8 GB, 110 M lines, accepted in 2746 s with a 12.3 GB peak (run by the arena; locally I checked slices of 128,265 and 405,144 declarations, 0 failed) |
 | **Rejects** it when every theorem is given another theorem's proof | 41,378 rejected, **the identical 41,378 that Tenet rejects**; on the Mathlib slice, the identical 275,042 |
-| **Rejects** its [negative corpus](tests/fixtures/invalid) | 9 of 9, each at the one declaration it names, each defended case accepted in full with its defense off |
+| **Rejects** its [negative corpus](tests/fixtures/invalid) | 11 of 11, each at the one declaration it names, each defended case accepted in full with its defense off |
 | **Agrees** with Tenet on randomly damaged files | 350 variants, 3,023 rejections, 0 disagreements |
 | **Passes** the [Lean Kernel Arena](docs/arena.md) | all 233 tests with no wrong answer, decline, error or timeout, including `mathlib`, `cslib`, `cedar`, `con-leche` and `navier-stokes-euler` |
 | **Re-derives** every recursor | compared field for field with the exporter's, for every inductive in `Init`, nested and mutual included |

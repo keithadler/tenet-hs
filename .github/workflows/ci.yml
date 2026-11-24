@@ -23,7 +23,8 @@ jobs:
     # The arena's own published test suite, run the way the arena runs it: built with plain ghc (no cabal,
     # no package downloads), executed with an empty environment, exit codes mapped as in
     # packaging/arena/tenet-hs.yaml. Anything short of a perfect score fails. perf/ tests that outrun the
-    # timeout are declined by the arena, not wrong, so they are skipped here.
+    # timeout are timeouts on the arena, not wrong answers, so tools/arena.sh lists them without failing;
+    # the two removed below are known to, and are skipped to save the runner time.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

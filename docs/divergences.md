@@ -16,11 +16,13 @@ the second list is short on purpose and every entry in it is a gap, not a choice
 | 1 | An accelerated primitive is checked before it is trusted | **Threat model** |
 | 2 | A literal's type is checked against the environment | **Threat model** |
 | 3 | The `_nested` namespace is reserved | **Threat model** |
-| 4 | `Lean.reduceBool` and `Lean.reduceNat` are declined | **Threat model** |
+| 4 | `Lean.reduceBool` and `Lean.reduceNat` are declined for exports from Lean 4.34 and earlier | **Threat model** |
 | 5 | Failure caching, then a faithful re-check | **Optimization, observationally neutral** |
 | 6 | A bound on work | **Resource** |
 | 7 | The string constructor is read from the environment | **Compatibility** |
 | 8 | No acceleration for `Nat.log2` | **Missing optimization, never a wrong answer** |
+| 9 | The rule set follows the Lean version the export names | **Compatibility** |
+| 10 | A loose bound variable in an inductive declaration is refused for every Lean version; an out-of-range integer is a format error | **Stricter, on malformed input only** |
 
 **Threat model (1 to 4).** Not disagreements about what is true. Lean ships its own prelude and does not support
 replacing it, so deciding from the name that `Nat.add` is addition, or that a numeral is a `Nat`, is sound *for
@@ -68,6 +70,11 @@ nothing.
 
 ### `Lean.reduceBool` and `Lean.reduceNat` are declined
 
+**From Lean 4.35 this is no longer a divergence.** Lean 4.35 removed in-kernel native reduction (`reduce_native` is gone from its
+`type_checker.cpp` from 4.35.0-rc1), so for an export whose metadata names Lean 4.35 or later these two constants are ordinary and
+a proof that needs them is rejected as a type mismatch, as in Lean. The rest of this section is about 4.34 and earlier, and about
+an export whose Lean version is missing, unparsable or a nightly, where the checker keeps declining.
+
 **Where:** `reduceNative`; the exit code is in `app/Main.hs`.
 
 **What Lean does:** runs compiled code to evaluate the argument.
@@ -99,6 +106,41 @@ whole run with exit code 2.
 Lean hardcodes the constant a string literal expands through, and it changed with `String`'s representation:
 `String.mk` up to about Lean 4.20, `String.ofList` since. tenet-hs reads whichever exists, so one build checks
 exports from either toolchain. It can only affect what a literal reduces to, never what is accepted without one.
+
+### The rule set follows the Lean version the export names
+
+**Where:** `kernelHasEta437` and `useRulesOf` in `Tenet.Env`; the rules are in `isDefEqCore`, `tryReduceRec`,
+`toCtorWhenStructure` and `tryEtaStructCore`.
+
+Lean 4.37.0-rc1 changed three definitional-equality rules (lean4#15103, lean4#15371, lean4#15373): proof
+irrelevance is tried before the first weak head normalization; a recursor's major premise is not reduced when it is a
+proof, and is eta-expanded when it belongs to a structure whose recursor eliminates into every sort, such as `And`;
+and structure eta applies against a partially applied constructor. Two of these accept more than 4.36 did. The
+middle one also accepts less: `Acc.rec` applied to a closed proof that only becomes `Acc.intro` after unfolding
+reduced in 4.36 and is stuck in 4.37.
+
+A Lean binary has one kernel. tenet-hs reads files written by many, so it uses the 4.37 rules when the metadata
+names Lean 4.37 or later (a 4.37 nightly from 2026-10-21 on) and the earlier rules otherwise, including when the
+version is missing or unparsable. The fixtures `eta437.ndjson` and `acc436.ndjson` pin both directions: each is
+accepted under the version that wrote it and rejected, at the declarations Lean's own kernel of the other version
+rejects, when its metadata claims the other. The version string is not authenticated, so a file can pick its rule
+set. Either rule set is one that a released Lean kernel implements.
+
+Lean 4.37 briefly also widened the unit-like rule (lean4#15372) and reverted it before 4.37.0-rc1 (lean4#16443).
+tenet-hs never had it. A 4.37 nightly from the days it was in can therefore be rejected here where that nightly's
+own kernel accepted.
+
+### A loose bound variable in an inductive declaration is refused for every Lean version
+
+**Where:** `checkNoLooseBVars` in `Tenet.Inductive`.
+
+Lean 4.36 and earlier did not always notice a loose bound variable in a constructor's type (lean4#16489); 4.37
+refuses it up front (lean4#16512, which calls the bug benign). tenet-hs refuses it whatever the export's version.
+No exporter writes such a term, so this cannot change the verdict on a real library.
+
+Related, also on malformed input only: an integer in the export that does not fit a 64-bit `Int`, such as a
+projection index of 2^64, makes the whole file a format error, where Lean's kernel rejects only the declarations that
+use it. Before, tenet-hs wrapped it, so 2^64 was read as 0 and could be accepted where Lean rejects.
 
 ### No acceleration for `Nat.log2`
 

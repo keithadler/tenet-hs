@@ -10,10 +10,12 @@ import qualified Data.ByteString as B
 import Data.IORef
 import Data.List (sort)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import System.Directory (getTemporaryDirectory, listDirectory, removeFile)
 import System.Exit
 import System.FilePath ((</>), takeExtension)
 import Tenet.Check
+import Tenet.Env (kernelHasEta437, kernelHasNoNativeReduction)
 import Tenet.Expr
 import Tenet.ExprOps
 import Tenet.Json
@@ -79,6 +81,60 @@ main = do
     test (what ++ " is a format error, not OK") (rFormatError r /= Nothing)
   removeFile emptyPath
   removeFile noMetaPath
+
+  -- Lean 4.35 removed in-kernel native reduction: declined for 4.34 and earlier (or an unknown Lean), rejected after
+  forM_ [ ("4.35.0", True), ("v4.35.0", True), ("4.35.0-rc1", True), ("4.35.0-rc4", True), ("4.36.0-rc1", True), ("5.0.0", True)
+        , ("4.34.1", False), ("4.34.0", False), ("4.33.1", False), ("4.12.0", False), ("4.36.0-nightly-2026-10-01", False)
+        , ("n/a", False), ("", False), ("garbage", False) ] $ \(v, removed) ->
+    test ("Lean " ++ show v ++ (if removed then " has no native reduction" else " is declined or unknown")) (kernelHasNoNativeReduction v == removed)
+  compiledCode <- B.readFile (fixtures </> "invalid" </> "compiled-code.ndjson")
+  forM_ [("n/a", True), ("4.34.1", True), ("4.33.1", True), ("4.35.0", False), ("4.35.0-rc4", False), ("4.36.0-rc1", False)] $ \(v, declined) -> do
+    let rewritten = T.encodeUtf8 (T.replace "\"version\":\"n/a\"" (T.pack ("\"version\":\"" ++ v ++ "\"")) (T.decodeUtf8 compiledCode))
+        path = tmp </> "tenet-hs-native.ndjson"
+    B.writeFile path rewritten
+    r <- checkFile defaultCheckOptions { coSilent = True } path
+    removeFile path
+    test ("compiled-code.ndjson claiming Lean " ++ v ++ " fails exactly 'bad'") (map (showName . fName) (rFailures r) == ["bad"])
+    test ("compiled-code.ndjson claiming Lean " ++ v ++ (if declined then " is declined" else " is rejected")) (map fDeclined (rFailures r) == [declined])
+
+  -- Lean 4.37 changed three definitional-equality rules (lean4#15103, #15371, #15373); the export's version picks the rule set
+  forM_ [ ("4.37.0", True), ("v4.37.0", True), ("4.37.0-rc1", True), ("4.37.1", True), ("4.38.0-rc1", True), ("5.0.0", True)
+        , ("4.38.0-nightly-2026-12-01", True), ("4.37.0-nightly-2026-10-21", True), ("4.37.0-nightly-2026-11-01", True)
+        , ("4.37.0-nightly-2026-10-20", False), ("4.37.0-nightly-2026-10-14", False), ("4.37.0-nightly", False)
+        , ("4.36.0", False), ("4.36.0-rc2", False), ("4.35.0", False), ("4.12.0", False)
+        , ("n/a", False), ("", False), ("garbage", False) ] $ \(v, has) ->
+    test ("Lean " ++ show v ++ (if has then " has the 4.37 rules" else " has the earlier rules")) (kernelHasEta437 v == has)
+  let checkAs file from to = do
+        bytes <- B.readFile (fixtures </> file)
+        let old = T.pack ("\"version\":\"" ++ from ++ "\"")
+            text = T.decodeUtf8 bytes
+            path = tmp </> "tenet-hs-eta437.ndjson"
+        test (file ++ " says it was written by Lean " ++ from) (old `T.isInfixOf` text)
+        B.writeFile path (T.encodeUtf8 (T.replace old (T.pack ("\"version\":\"" ++ to ++ "\"")) text))
+        r <- checkFile defaultCheckOptions { coSilent = True } path
+        removeFile path
+        pure (rFormatError r, sort (map (showName . fName) (rFailures r)))
+  -- accepted by Lean 4.37, rejected by 4.36: eta for the major of And.rec, eta against a partial constructor
+  forM_ ["4.37.0-rc1", "4.37.0", "4.38.0"] $ \v -> do
+    r <- checkAs "eta437.ndjson" "4.37.0-rc1" v
+    test ("eta437.ndjson as Lean " ++ v ++ " is accepted") (r == (Nothing, []))
+  forM_ ["4.36.0", "4.35.0", "n/a"] $ \v -> do
+    r <- checkAs "eta437.ndjson" "4.37.0-rc1" v
+    test ("eta437.ndjson as Lean " ++ v ++ " fails exactly andMajor and partialCtor") (r == (Nothing, ["Eta437.andMajor", "Eta437.partialCtor"]))
+  -- accepted by Lean 4.36, rejected by 4.37: a recursor whose major premise is a proof that has to be reduced
+  forM_ ["4.36.0", "4.35.0", "n/a"] $ \v -> do
+    r <- checkAs "acc436.ndjson" "4.36.0" v
+    test ("acc436.ndjson as Lean " ++ v ++ " is accepted") (r == (Nothing, []))
+  forM_ ["4.37.0-rc1", "4.37.0"] $ \v -> do
+    r <- checkAs "acc436.ndjson" "4.36.0" v
+    test ("acc436.ndjson as Lean " ++ v ++ " fails exactly accReduces") (r == (Nothing, ["Acc436.accReduces"]))
+  -- the must-reject case is rejected under either rule set
+  rOld <- checkAs ("invalid" </> "partial-constructor-eta.ndjson") "4.37.0-rc1" "4.36.0"
+  test "partial-constructor-eta.ndjson as Lean 4.36.0 still rejects boxEta" ("Eta437.boxEta" `elem` snd rOld)
+
+  -- a count that does not fit a machine integer is a format error, not a smaller count
+  test "2^64 is not read as 0" (either (const True) (const False) (parseJson "18446744073709551616" >>= asInt))
+  test "2^32 is read exactly" ((parseJson "4294967296" >>= asInt) == Right 4294967296)
 
   -- the negative corpus
   manifestBytes <- B.readFile (fixtures </> "invalid" </> "manifest.json")

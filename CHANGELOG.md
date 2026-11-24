@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.1.4
+
+Lean 4.36.0 and 4.37.0-rc1. Lean 4.36.0 changed nothing in its kernel's decisions; 4.37.0-rc1 changed three
+definitional-equality rules, and tenet-hs now follows the Lean version an export names:
+
+- Proof irrelevance is tried before the first weak head normalization of a comparison, not after (lean4#15103).
+- A recursor's major premise is not reduced when it is a proof. It is eta-expanded when its structure's recursor
+  eliminates into every sort, which now includes `And` and other subsingleton structures in `Prop` (lean4#15371).
+- Structure eta applies against a partially applied constructor (lean4#15373).
+
+For an export from Lean 4.37 or later (a 4.37 nightly from 2026-10-21 on) the new rules apply; for anything earlier,
+or a missing or unparsable version, the old ones do, unchanged. Two new fixtures pin both directions:
+`eta437.ndjson` (accepted as 4.37, exactly `Eta437.andMajor` and `Eta437.partialCtor` rejected as 4.36) and
+`acc436.ndjson` (accepted as 4.36, exactly `Acc436.accReduces` rejected as 4.37). Lean's own kernels of those two
+versions give the same verdicts on the same files. The negative corpus gains `partial-constructor-eta.ndjson` (an
+arbitrary function is not a partial constructor) and `loose-bvar-inductive.ndjson`.
+
+Also, for every Lean version: a loose bound variable in an inductive type or constructor type is refused up front, as
+Lean 4.37 does (lean4#16512; the file was already rejected, later and with a less direct message), and an integer in
+the export that does not fit a 64-bit `Int` is a format error rather than being wrapped. Lean 4.37 fixed the same
+class at 32 bits (lean4#16279); tenet-hs never truncated at 32 bits, but before this change a projection index or a
+parameter count of 2^64 was read as 0. Checked on `eta437.ndjson` with its two field-0 projection indices rewritten
+to 2^64: 0.1.3 accepts `And.left`, Lean 4.37.0-rc1's kernel rejects it ("invalid projection"), and tenet-hs now
+refuses the file as malformed. Found by reading the reader, not by a file in the wild; lean4export never writes such
+an index.
+
+Native reduction is declined or rejected according to the Lean that wrote the export. Lean 4.35 removed in-kernel native
+reduction (`reduce_native` is gone from its `type_checker.cpp` from 4.35.0-rc1; `Lean.ofReduceBool` no longer exists, and
+`native_decide` already produced a per-proof axiom on 4.34). For an export from Lean 4.35 or later, `Lean.reduceBool` and
+`Lean.reduceNat` are now ordinary constants, so a file that leans on them is rejected as a type mismatch (exit 1), as in Lean.
+For 4.34 and earlier, and for an export whose Lean version is missing, unparsable or a nightly, tenet-hs still declines
+(exit 4). Real 4.35 exports do not contain these terms, so no verdict on a real library changes. The spec has 26 new
+checks; ignoring the new flag makes three of them fail.
+
+## 0.1.3
+
+No code change. Checked against Lean 4.35.0: `Init` exported from it has 57,919 declarations, 0 failed, the same count
+Tenet and the reference kernel report. Lean 4.35.0 removed native reduction from its kernel, so `Lean.reduceBool` and
+`Lean.reduceNat` no longer reduce in the reference either. tenet-hs still declines them (exit 4) where 4.35.0 reports
+an ordinary type mismatch; tenet-jvm already rejects them.
+
 ## 0.1.2
 
 A robustness fix.
