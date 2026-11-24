@@ -37,7 +37,7 @@ usage = unlines
   ]
 
 version :: String
-version = "0.1.4"
+version = "0.1.5"
 
 main :: IO ()
 main = do

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.5
+
+A binder annotation is stripped only if it means what its name says. `optParam`, `autoParam`, `outParam` and
+`semiOutParam` were stripped from binder types by name while an inductive type was checked, as Lean's kernel does. A file
+that declares its own `autoParam` could make a constructor argument look like a proof, give a `Prop` inductive large
+elimination, and prove `False` with no axioms (leanbugs lean-0026, lean4#15704). tenet-hs 0.1.4 and earlier accept such a
+file. Lean's own kernel accepts it too, and the issue was closed upstream as outside its threat model, since that kernel
+assumes the official prelude. The annotation is now stripped only when the result is definitionally equal to what was
+written. The file is in the negative corpus (`autoparam-large-elimination.ndjson`), rejected at `Exploit.P`. The whole
+`Lean` library from 4.35.0-rc4 (171,705 constants) still checks with 0 failures. Not rechecked: Mathlib and the other
+large corpora, and the arena suite.
+
 ## 0.1.4
 
 Lean 4.36.0 and 4.37.0-rc1. Lean 4.36.0 changed nothing in its kernel's decisions; 4.37.0-rc1 changed three

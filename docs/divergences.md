@@ -23,8 +23,9 @@ the second list is short on purpose and every entry in it is a gap, not a choice
 | 8 | No acceleration for `Nat.log2` | **Missing optimization, never a wrong answer** |
 | 9 | The rule set follows the Lean version the export names | **Compatibility** |
 | 10 | A loose bound variable in an inductive declaration is refused for every Lean version; an out-of-range integer is a format error | **Stricter, on malformed input only** |
+| 11 | A binder annotation is checked before it is stripped | **Threat model** |
 
-**Threat model (1 to 4).** Not disagreements about what is true. Lean ships its own prelude and does not support
+**Threat model (1 to 4, and 11).** Not disagreements about what is true. Lean ships its own prelude and does not support
 replacing it, so deciding from the name that `Nat.add` is addition, or that a numeral is a `Nat`, is sound *for
 Lean*. tenet-hs reads a file somebody else produced, which is its entire purpose, so the same shortcuts are
 holes. In each case it ends up closer to the type theory than Lean is, by doing work Lean can correctly skip.
@@ -48,6 +49,19 @@ unfolded rather than rejected, so an unusual but honest prelude is checked slowl
 With the check the file is rejected at the one declaration that relies on `Nat.add 2 2` being 4; with
 `--no-primitive-check` it is accepted in full, which is what shows the rejection is the defense and not a broken
 file.
+
+### A binder annotation is checked before it is stripped
+
+**Where:** `consumeAnnotations`, used by `mkLocal`, in `Tenet.Inductive`.
+
+**What Lean does:** strips `optParam`, `autoParam`, `outParam` and `semiOutParam` from binder types by name while
+checking an inductive type.
+
+**What tenet-hs does:** strips one only when the result is definitionally equal to what was written.
+
+**Evidence it matters:** `tests/fixtures/invalid/autoparam-large-elimination.ndjson` declares its own `autoParam` and
+proves `False` with no axioms. Lean's kernel accepts it (lean4#15704, closed upstream on the ground that the official
+prelude is assumed), and tenet-hs 0.1.4 did.
 
 ### A literal's type is checked against the environment
 
