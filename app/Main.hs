@@ -22,7 +22,7 @@ usage = unlines
   , "usage: tenet-hs check FILE.ndjson [options]"
   , ""
   , "exit codes: 0 every declaration accepted, 1 something rejected, 2 malformed export,"
-  , "  4 declined (the file needs compiled code, which an external checker will not trust)"
+  , "  4 declined (the file needs compiled code, which an external checker will not trust, or is in a newer format)"
   , ""
   , "options:"
   , "  --fail-fast            stop at the first rejected declaration"
@@ -65,13 +65,18 @@ runCheck argv = do
   forM_ (rMeta r) $ \m ->
     unless (coQuiet opts) $ putStrLn ("export by " ++ mExporter m ++ ", Lean " ++ mLean m ++ ", format " ++ mFormat m)
   forM_ (rFormatError r) $ \e -> hPutStrLn stderr ("tenet-hs: malformed export, " ++ e)
+  forM_ (rUnsupported r) $ \e -> do
+    hPutStrLn stderr ("tenet-hs: " ++ e)
+    when (null (rFailures r) && rFormatError r == Nothing) $ do
+      putStrLn "DECLINED: 0 checked"
+      exitWith (ExitFailure 4)
   unless (null (rUnvalidated r)) $
     putStrLn ("note: these primitives did not match their defining equations and were unfolded instead of shortcut: "
               ++ intercalate ", " (map show (rUnvalidated r :: [Primitive])))
   when (coRules opts) printRules
   let nfail = length (rFailures r)
       secs = show (fromIntegral (round (rSeconds r * 10) :: Int) / 10 :: Double)
-  if nfail == 0 && rFormatError r == Nothing
+  if nfail == 0 && rFormatError r == Nothing && rUnsupported r == Nothing
     then putStrLn ("OK: " ++ show (rChecked r) ++ " checked, 0 failed, " ++ show (rConstants r) ++ " constants, " ++ secs ++ "s")
     else do
       let declined = nfail > 0 && all fDeclined (rFailures r) && rFormatError r == Nothing

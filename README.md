@@ -82,7 +82,7 @@ lake env .lake/build/bin/lean4export Init > Init.ndjson
 | `--max-unfolds N` | deterministic work bound per declaration |
 
 Exit codes: **0** every declaration accepted, **1** something rejected, **2** the export is malformed,
-**4** declined (the file needs compiled code, which an external checker will not trust).
+**4** declined (the file needs compiled code, which an external checker will not trust, or is in an export format newer than 3.1).
 
 ```bash
 cabal test

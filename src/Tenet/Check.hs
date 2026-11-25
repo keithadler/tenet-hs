@@ -55,6 +55,7 @@ data Report = Report
   , rSeconds :: Double
   , rMeta :: Maybe ExportMeta
   , rFormatError :: Maybe String
+  , rUnsupported :: Maybe String  -- ^ the export is in a format newer than this reads; nothing was checked
   }
 
 -- | Check an export, reading it line by line: the file is far larger than anything that should be held at once.
@@ -81,6 +82,7 @@ checkStream opts nextLine = do
   checked <- newIORef (0 :: Int)
   meta <- newIORef Nothing
   fmtErr <- newIORef Nothing
+  unsup <- newIORef Nothing
   let only = fmap S.fromList (coOnly opts)
       selected d = case only of
         Nothing -> True
@@ -97,8 +99,9 @@ checkStream opts nextLine = do
                   Left e -> writeIORef fmtErr (Just ("line " ++ show (lineNo + 1) ++ ": " ++ e))
                   Right (LMeta m) -> do
                     writeIORef meta (Just m)
-                    useRulesOf env (mLean m)
-                    loop (lineNo + 1) tbl
+                    if formatTooNew (mFormat m)
+                      then writeIORef unsup (Just ("export format " ++ mFormat m ++ " is not supported yet (the newest supported is 3.1)"))
+                      else useRulesOf env (mLean m) >> loop (lineNo + 1) tbl
                   Right LTable -> loop (lineNo + 1) tbl
                   Right (LDecl d) -> do
                     stop <- if selected d then checkOne d else installUnchecked env d >> pure False
@@ -128,6 +131,7 @@ checkStream opts nextLine = do
   c <- readIORef checked
   m <- readIORef meta
   fe0 <- readIORef fmtErr
+  us <- readIORef unsup
   -- An export with no metadata record (an empty file, or something that is not lean4export output) has nothing in
   -- it to vouch for. It must not read as "OK: 0 checked", which is what an exporter that died before writing
   -- anything would otherwise look like.
@@ -136,7 +140,7 @@ checkStream opts nextLine = do
         _ -> fe0
   n <- envSize env
   unv <- unvalidatedPrimitives env
-  pure Report { rChecked = c, rConstants = n, rFailures = fs, rUnvalidated = unv, rSeconds = t3 - t0, rMeta = m, rFormatError = fe }
+  pure Report { rChecked = c, rConstants = n, rFailures = fs, rUnvalidated = unv, rSeconds = t3 - t0, rMeta = m, rFormatError = fe, rUnsupported = us }
   where
     indent = intercalate "\n    " . lines
     show2 :: Double -> String

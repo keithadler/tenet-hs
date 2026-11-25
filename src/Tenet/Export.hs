@@ -7,7 +7,7 @@ Authors: Keith Adler
 -- the declarations in the order the exporter wrote them.
 module Tenet.Export
   ( ExportMeta (..), Tables (..), newTables, ExportDecl (..), XInd (..), XCtor (..), XRec (..), XRule (..)
-  , Line (..), parseLine, exportDeclToDeclaration, exportDeclNames, exportDeclDisplay
+  , Line (..), parseLine, formatTooNew, exportDeclToDeclaration, exportDeclNames, exportDeclDisplay
   ) where
 
 import Control.Exception (evaluate)
@@ -90,6 +90,18 @@ parseLine tbl bs = case parseJson bs of
         pure (if ok then Right LTable else Left (what ++ " index " ++ show i ++ " is defined twice"))
       (Left err, _) -> pure (Left err)
       (_, Left err) -> pure (Left err)
+
+-- | Whether a format version is newer than 3.1. Format 3.2 adds flags to inductive types that the kernel must
+-- check (lean4#16595); reading it without them would give verdicts under the wrong rules, so it is declined.
+formatTooNew :: String -> Bool
+formatTooNew v = case break (== '.') v of
+  ("3", '.' : r) -> case reads (takeWhile (/= '.') r) :: [(Integer, String)] of
+    [(m, "")] -> m < 0 || m > 1
+    _ -> True
+  ("3", _) -> False
+  (major, _) -> case reads major :: [(Integer, String)] of
+    [(m, "")] -> m > 3
+    _ -> False
 
 parseMeta :: Json -> R ExportMeta
 parseMeta j = do

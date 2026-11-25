@@ -15,6 +15,7 @@ import System.Directory (getTemporaryDirectory, listDirectory, removeFile)
 import System.Exit
 import System.FilePath ((</>), takeExtension)
 import Tenet.Check
+import Tenet.Export (formatTooNew)
 import Tenet.Env (kernelHasEta437, kernelHasNoNativeReduction)
 import Tenet.Expr
 import Tenet.ExprOps
@@ -96,6 +97,15 @@ main = do
     removeFile path
     test ("compiled-code.ndjson claiming Lean " ++ v ++ " fails exactly 'bad'") (map (showName . fName) (rFailures r) == ["bad"])
     test ("compiled-code.ndjson claiming Lean " ++ v ++ (if declined then " is declined" else " is rejected")) (map fDeclined (rFailures r) == [declined])
+
+  -- Format 3.2 adds inductive flags the kernel must check (lean4#16595); ignoring them would be a wrong answer
+  forM_ [("3", False), ("3.0.0", False), ("3.1.0", False), ("3.1", False), ("?", False)
+        , ("3.2.0", True), ("3.2", True), ("3.10.0", True), ("3.x", True), ("3.-1", True), ("4.0.0", True)] $ \(v, new) ->
+    test ("format " ++ v ++ (if new then " is declined" else " is read")) (formatTooNew v == new)
+  do
+    r <- checkLines defaultCheckOptions { coSilent = True }
+           ["{\"meta\":{\"exporter\":{\"name\":\"x\",\"version\":\"1\"},\"lean\":{\"githash\":\"\",\"version\":\"\"},\"format\":{\"version\":\"3.2.0\"}}}", "not read"]
+    test "a 3.2 export is declined, unread" (rUnsupported r /= Nothing && rFormatError r == Nothing && rChecked r == 0)
 
   -- Lean 4.37 changed three definitional-equality rules (lean4#15103, #15371, #15373); the export's version picks the rule set
   forM_ [ ("4.37.0", True), ("v4.37.0", True), ("4.37.0-rc1", True), ("4.37.1", True), ("4.38.0-rc1", True), ("5.0.0", True)
